@@ -5,7 +5,11 @@ node_modules/
 .vs/
 frontend/dist/
 appsettings.Development.local.json
+# Артефакты Playwright MCP (снимки страниц, логи консоли)
+.playwright-mcp/
 # Runtime-артефакты WebDbViewer.Web (ключи Data Protection, кэш метаданных, датасорсы)
 src/WebDbViewer.Web/keys/
 src/WebDbViewer.Web/metadata.db
 src/WebDbViewer.Web/App_Data/
+# Файловые логи Serilog
+src/WebDbViewer.Web/logs/

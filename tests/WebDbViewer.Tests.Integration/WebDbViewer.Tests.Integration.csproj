@@ -12,6 +12,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <!-- Пропуск тестов, требующих живого PostgreSQL, когда сервер недоступен -->
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.23" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +24,7 @@
     <ProjectReference Include="..\..\src\WebDbViewer.Core\WebDbViewer.Core.csproj" />
     <ProjectReference Include="..\..\src\WebDbViewer.Providers.Postgres\WebDbViewer.Providers.Postgres.csproj" />
     <ProjectReference Include="..\..\src\WebDbViewer.Metadata\WebDbViewer.Metadata.csproj" />
+    <ProjectReference Include="..\..\src\WebDbViewer.Storage.Postgres\WebDbViewer.Storage.Postgres.csproj" />
     <ProjectReference Include="..\..\src\WebDbViewer.Web\WebDbViewer.Web.csproj" />
   </ItemGroup>
 

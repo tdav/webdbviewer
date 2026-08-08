@@ -4,21 +4,20 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.Extensions.Options;
-using WebDbViewer.Web.Security;
+using WebDbViewer.Core.Security;
 
 namespace WebDbViewer.Web.Pages;
 
-/// <summary>Страница входа: простая форма логина с одним пользователем из конфигурации.</summary>
+/// <summary>Страница входа: учётные записи хранятся в метабазе PostgreSQL.</summary>
 [AllowAnonymous]
 public sealed class LoginModel : PageModel
 {
-    private readonly IOptions<AuthOptions> _auth;
+    private readonly IUserStore _users;
     private readonly ILogger<LoginModel> _logger;
 
-    public LoginModel(IOptions<AuthOptions> auth, ILogger<LoginModel> logger)
+    public LoginModel(IUserStore users, ILogger<LoginModel> logger)
     {
-        _auth = auth;
+        _users = users;
         _logger = logger;
     }
 
@@ -40,11 +39,11 @@ public sealed class LoginModel : PageModel
         ReturnUrl = returnUrl;
         Username = username;
 
-        var options = _auth.Value;
-        var userOk = string.Equals(username?.Trim(), options.Username, StringComparison.OrdinalIgnoreCase);
-        var passOk = PasswordHasher.Verify(password ?? "", options.PasswordHash);
+        var user = await _users.FindAsync(username ?? "", HttpContext.RequestAborted);
+        var passOk = user is not null
+            && Security.PasswordHasher.Verify(password ?? "", user.PasswordHash);
 
-        if (!userOk || !passOk)
+        if (user is null || !passOk)
         {
             _logger.LogWarning("Неудачная попытка входа: пользователь «{User}», IP {Ip}",
                 username, HttpContext.Connection.RemoteIpAddress);
@@ -54,8 +53,8 @@ public sealed class LoginModel : PageModel
 
         var claims = new List<Claim>
         {
-            new(ClaimTypes.Name, options.Username),
-            new(ClaimTypes.Role, "admin")
+            new(ClaimTypes.Name, user.Username),
+            new(ClaimTypes.Role, user.Role)
         };
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
 
@@ -64,7 +63,10 @@ public sealed class LoginModel : PageModel
             new ClaimsPrincipal(identity),
             new AuthenticationProperties { IsPersistent = true });
 
-        _logger.LogInformation("Пользователь «{User}» вошёл в систему", options.Username);
+        _logger.LogInformation("Пользователь «{User}» вошёл в систему", user.Username);
+
+        if (user.MustChangePassword)
+            _logger.LogWarning("Учётная запись «{User}» использует пароль по умолчанию — смените его", user.Username);
 
         // Защита от open redirect: разрешаем только локальные адреса
         if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))

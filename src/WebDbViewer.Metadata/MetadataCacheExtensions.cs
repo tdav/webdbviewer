@@ -26,6 +26,26 @@ public static class MetadataCacheExtensions
             services.Configure(configure);
 
         services.TryAddSingleton<ISnapshotStore, SqliteSnapshotStore>();
+        return AddCacheCore(services);
+    }
+
+    /// <summary>
+    /// Регистрирует кэш метаданных без файлового SQLite-хранилища: реализацию
+    /// <see cref="ISnapshotStore"/> должен зарегистрировать вызывающий (например, метабаза PostgreSQL).
+    /// </summary>
+    public static IServiceCollection AddMetadataCache(
+        this IServiceCollection services,
+        Action<MetadataCacheOptions>? configure = null)
+    {
+        services.AddOptions<MetadataCacheOptions>();
+        if (configure is not null)
+            services.Configure(configure);
+
+        return AddCacheCore(services);
+    }
+
+    private static IServiceCollection AddCacheCore(IServiceCollection services)
+    {
         services.TryAddSingleton<MetadataCache>();
         services.TryAddSingleton<IMetadataCache>(sp => sp.GetRequiredService<MetadataCache>());
         services.TryAddSingleton<IMetadataPersistence>(sp => sp.GetRequiredService<MetadataCache>());

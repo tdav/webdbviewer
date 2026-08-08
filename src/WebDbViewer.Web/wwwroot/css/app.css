@@ -179,8 +179,31 @@ label { display: block; margin-bottom: 2px; color: var(--text-muted); font-size:
     border-right: 1px solid var(--border);
 }
 
-.splitter-v { grid-column: 2; cursor: col-resize; background: transparent; }
-.splitter-v:hover { background: var(--accent); opacity: .4; }
+/* Разделители: перетаскивание реализовано в wwwroot/js/splitter.js.
+   touch-action: none обязателен — иначе браузер перехватывает жест как прокрутку. */
+.splitter-v,
+.splitter-h {
+    background: transparent;
+    touch-action: none;
+    transition: background-color .12s ease;
+    /* Поверх соседних панелей: иначе при минимальной высоте редактора
+       его textarea/CodeMirror перекрывает разделитель и тот перестаёт ловить мышь. */
+    position: relative;
+    z-index: 2;
+}
+.splitter-v:hover, .splitter-h:hover,
+.splitter-v:focus-visible, .splitter-h:focus-visible,
+.splitter-v.dragging, .splitter-h.dragging {
+    background: var(--accent);
+}
+.splitter-v:focus-visible, .splitter-h:focus-visible { outline: none; }
+
+/* Во время перетаскивания: запрет выделения текста и единый курсор на всей странице. */
+body.wdv-resizing { user-select: none; }
+body.wdv-resizing-col, body.wdv-resizing-col * { cursor: col-resize !important; }
+body.wdv-resizing-row, body.wdv-resizing-row * { cursor: row-resize !important; }
+
+.splitter-v { grid-column: 2; cursor: col-resize; }
 
 .editor-and-results {
     grid-column: 3;
@@ -190,8 +213,7 @@ label { display: block; margin-bottom: 2px; color: var(--text-muted); font-size:
     min-height: 0;
 }
 
-.splitter-h { cursor: row-resize; background: transparent; }
-.splitter-h:hover { background: var(--accent); opacity: .4; }
+.splitter-h { cursor: row-resize; }
 
 /* ---------- Навигатор ---------- */
 .navigator-toolbar {
@@ -225,7 +247,9 @@ label { display: block; margin-bottom: 2px; color: var(--text-muted); font-size:
 .tree-empty { color: var(--text-muted); padding: 4px 10px; font-style: italic; }
 
 /* ---------- Вкладки редактора ---------- */
-.editor-panel { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+/* overflow: hidden — содержимое не вылезает за границы панели, когда разделитель
+   сжимает редактор до минимума (иначе textarea накрывает разделитель). */
+.editor-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--bg); }
 
 .editor-tabs-bar {
     display: flex;
@@ -275,6 +299,8 @@ label { display: block; margin-bottom: 2px; color: var(--text-muted); font-size:
 .editor-pane textarea.sql-editor-source {
     width: 100%;
     height: 100%;
+    /* Собственная высота строк не должна распирать панель при сжатии редактора. */
+    min-height: 0;
     resize: none;
     border: none;
     border-radius: 0;

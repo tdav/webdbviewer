@@ -5,8 +5,13 @@
     <ProjectReference Include="..\WebDbViewer.Providers.Postgres\WebDbViewer.Providers.Postgres.csproj" />
     <ProjectReference Include="..\WebDbViewer.Providers.Oracle\WebDbViewer.Providers.Oracle.csproj" />
     <ProjectReference Include="..\WebDbViewer.Metadata\WebDbViewer.Metadata.csproj" />
+    <ProjectReference Include="..\WebDbViewer.Storage.Postgres\WebDbViewer.Storage.Postgres.csproj" />
     <ProjectReference Include="..\WebDbViewer.Parsing\WebDbViewer.Parsing.csproj" />
     <ProjectReference Include="..\WebDbViewer.Completion\WebDbViewer.Completion.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
   </ItemGroup>
 
   <PropertyGroup>
