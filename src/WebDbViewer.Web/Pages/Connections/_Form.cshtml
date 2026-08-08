@@ -1,0 +1,86 @@
+@model WebDbViewer.Web.Pages.Connections.ConnectionFormVm
+@{
+    var isNew = Model.Id is null;
+}
+<div class="alert alert-info" style="background:var(--bg-panel);border-color:var(--border);color:var(--text)">
+    <h3 style="margin-top:0">@(isNew ? "Новое подключение" : $"Изменение подключения «{Model.Name}»")</h3>
+    <form id="connection-form">
+        <input type="hidden" name="id" value="@(Model.Id?.ToString() ?? "")" />
+        <div class="field-row">
+            <div class="field">
+                <label for="cf-name">Название *</label>
+                <input type="text" id="cf-name" name="name" value="@Model.Name" required />
+            </div>
+            <div class="field">
+                <label for="cf-kind">СУБД *</label>
+                <select id="cf-kind" name="kind">
+                    <option value="Postgres" selected="@(Model.Kind == DbKind.Postgres)">PostgreSQL</option>
+                    <option value="Oracle" selected="@(Model.Kind == DbKind.Oracle)">Oracle</option>
+                </select>
+            </div>
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label for="cf-host">Хост *</label>
+                <input type="text" id="cf-host" name="host" value="@Model.Host" required />
+            </div>
+            <div class="field" style="flex:0 1 110px">
+                <label for="cf-port">Порт</label>
+                <input type="number" id="cf-port" name="port" value="@(Model.Port > 0 ? Model.Port : null)" placeholder="5432 / 1521" min="1" max="65535" />
+            </div>
+            <div class="field">
+                <label for="cf-database">База данных / сервис *</label>
+                <input type="text" id="cf-database" name="database" value="@Model.Database" required />
+            </div>
+        </div>
+        <div class="field-row">
+            <div class="field">
+                <label for="cf-username">Логин *</label>
+                <input type="text" id="cf-username" name="username" value="@Model.Username" required autocomplete="off" />
+            </div>
+            <div class="field">
+                <label for="cf-password">Пароль @(isNew ? "*" : "(пусто — не менять)")</label>
+                <input type="password" id="cf-password" name="password" autocomplete="new-password" />
+            </div>
+        </div>
+        <div class="field-row" style="align-items:center">
+            <div class="checkbox-field">
+                <input type="checkbox" id="cf-ssl" name="useSsl" value="true" checked="@Model.UseSsl" />
+                <label for="cf-ssl">SSL / шифрование</label>
+            </div>
+            <div class="checkbox-field">
+                <input type="checkbox" id="cf-readonly" name="readOnly" value="true" checked="@Model.ReadOnly" />
+                <label for="cf-readonly">Только чтение</label>
+            </div>
+            <div class="checkbox-field">
+                <input type="checkbox" id="cf-prod" name="isProduction" value="true" checked="@Model.IsProduction" />
+                <label for="cf-prod">Production <span class="badge badge-prod">PROD</span></label>
+            </div>
+        </div>
+
+        <div id="test-connection-result"></div>
+
+        <div style="display:flex;gap:8px;margin-top:10px">
+            <button type="button" class="btn btn-primary"
+                    hx-post="/connections?handler=Save"
+                    hx-include="#connection-form"
+                    hx-target="#connections-list"
+                    hx-swap="innerHTML">
+                Сохранить
+            </button>
+            <button type="button" class="btn"
+                    hx-post="/connections?handler=Test"
+                    hx-include="#connection-form"
+                    hx-target="#test-connection-result"
+                    hx-swap="innerHTML"
+                    hx-indicator="#test-indicator">
+                Проверить подключение
+            </button>
+            <span id="test-indicator" class="htmx-indicator">Проверяем…</span>
+            <button type="button" class="btn btn-ghost"
+                    onclick="document.getElementById('connection-form-area').innerHTML = ''">
+                Отмена
+            </button>
+        </div>
+    </form>
+</div>

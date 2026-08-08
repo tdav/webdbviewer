@@ -1,0 +1,44 @@
+@page "/login"
+@model WebDbViewer.Web.Pages.LoginModel
+@{
+    Layout = null;
+    ViewData["Title"] = "Вход";
+}
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Вход — WebDbViewer</title>
+    <link rel="stylesheet" href="/css/app.css" />
+    <script>
+        (function () {
+            try {
+                var theme = localStorage.getItem("wdv-theme");
+                if (theme) document.documentElement.setAttribute("data-theme", theme);
+            } catch (e) { }
+        })();
+    </script>
+</head>
+<body>
+    <div class="login-page">
+        <form method="post" class="login-card" autocomplete="off">
+            <h1>&#128451; WebDbViewer</h1>
+            @if (Model.ErrorMessage is not null)
+            {
+                <div class="alert alert-error">@Model.ErrorMessage</div>
+            }
+            <div class="field">
+                <label for="username">Имя пользователя</label>
+                <input type="text" id="username" name="username" value="@Model.Username" required autofocus />
+            </div>
+            <div class="field">
+                <label for="password">Пароль</label>
+                <input type="password" id="password" name="password" required />
+            </div>
+            <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+            <button type="submit" class="btn btn-primary">Войти</button>
+        </form>
+    </div>
+</body>
+</html>

@@ -1,0 +1,63 @@
+@page "/data/{ds:guid}/{schema}/{table}"
+@model WebDbViewer.Web.Pages.DataModel
+@{
+    ViewData["Title"] = $"{Model.Schema}.{Model.Table}";
+}
+<div class="main-content" style="display:flex;flex-direction:column;min-height:0">
+    <div class="data-toolbar">
+        <div style="display:flex;align-items:center;gap:8px;margin-right:auto">
+            <strong title="Датасорс">@Model.DataSourceName</strong>
+            @if (Model.IsProduction)
+            {
+                <span class="badge badge-prod" title="Производственная база!">PROD</span>
+            }
+            @if (Model.IsReadOnly)
+            {
+                <span class="badge badge-ro">RO</span>
+            }
+            <span class="tree-comment" style="font-size:13px">@Model.Schema.@Model.Table</span>
+        </div>
+
+        <div class="field">
+            <label for="data-where">Фильтр (WHERE)</label>
+            <input type="text" id="data-where" data-role="where-filter" style="width:280px"
+                   placeholder="например: id &gt; 100 AND name LIKE 'А%'" />
+        </div>
+        <div class="field">
+            <label for="data-orderby">Сортировка (ORDER BY)</label>
+            <input type="text" id="data-orderby" data-role="order-by" style="width:170px" placeholder="колонка" />
+        </div>
+        <div class="field">
+            <label for="data-orderdir">Направление</label>
+            <select id="data-orderdir" data-role="order-dir">
+                <option value="asc">По возрастанию</option>
+                <option value="desc">По убыванию</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="data-limit">Строк на страницу</label>
+            <select id="data-limit" data-role="page-limit">
+                <option>100</option>
+                <option selected>200</option>
+                <option>500</option>
+                <option>1000</option>
+            </select>
+        </div>
+        <button type="button" id="data-apply" class="btn btn-primary" data-action="apply-filter" title="Применить фильтр и сортировку">
+            Применить
+        </button>
+        <button type="button" id="data-refresh" class="btn" data-action="refresh" title="Обновить данные">&#8635; Обновить</button>
+    </div>
+
+    @* Контейнер виртуализованного грида: заполняется grid.js по data-атрибутам *@
+    <div class="grid-container"
+         id="data-grid"
+         data-grid="table-data"
+         data-ds-id="@Model.DsId"
+         data-schema="@Model.Schema"
+         data-table="@Model.Table">
+        <div class="results-placeholder">Загрузка данных таблицы…</div>
+    </div>
+
+    <div class="results-status" id="data-status" data-role="grid-status">Готово</div>
+</div>

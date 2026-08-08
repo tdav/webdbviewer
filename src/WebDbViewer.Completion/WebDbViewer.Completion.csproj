@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\WebDbViewer.Core\WebDbViewer.Core.csproj" />
+    <ProjectReference Include="..\WebDbViewer.Parsing\WebDbViewer.Parsing.csproj" />
+    <ProjectReference Include="..\WebDbViewer.Metadata\WebDbViewer.Metadata.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

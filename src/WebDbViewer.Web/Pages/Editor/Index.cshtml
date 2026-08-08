@@ -1,0 +1,202 @@
+@page "/editor"
+@using WebDbViewer.Web.Pages.Shared
+@model WebDbViewer.Web.Pages.Editor.EditorIndexModel
+@{
+    ViewData["Title"] = "SQL-редактор";
+}
+
+<div class="workbench">
+    @* ===================== Левая панель: навигатор БД ===================== *@
+    <aside class="navigator" id="db-navigator">
+        <div class="navigator-toolbar">
+            <select id="nav-search-ds" name="ds" title="Датасорс для поиска">
+                @if (Model.DataSources.Count == 0)
+                {
+                    <option value="">— нет подключений —</option>
+                }
+                @foreach (var ds in Model.DataSources)
+                {
+                    <option value="@ds.Id">@ds.Name</option>
+                }
+            </select>
+            <input type="text" name="q" id="nav-search" placeholder="Поиск объектов…"
+                   hx-get="/tree?handler=Search"
+                   hx-trigger="input changed delay:400ms, search"
+                   hx-target="#nav-search-results"
+                   hx-swap="innerHTML"
+                   hx-include="#nav-search-ds" />
+            <label class="checkbox-field" title="Не показывать системные схемы и объекты">
+                <input type="checkbox" id="nav-hide-system" name="hideSystem" value="true" checked />
+                Скрывать системные объекты
+            </label>
+        </div>
+        <div class="navigator-body">
+            <div id="nav-search-results"></div>
+            @if (Model.DataSources.Count == 0)
+            {
+                <div class="tree-empty">
+                    Нет подключений. <a href="/connections">Создать подключение</a>
+                </div>
+            }
+            else
+            {
+                <ul class="tree" id="nav-tree-root">
+                    @foreach (var ds in Model.DataSources)
+                    {
+                        <partial name="_TreeNode" model="@(new TreeNodeVm
+                            {
+                                DsId = ds.Id,
+                                Path = "",
+                                Node = new DbObjectNode
+                                {
+                                    Name = ds.Name,
+                                    Type = DbObjectType.Database,
+                                    HasChildren = true,
+                                    Comment = ds.IsProduction ? "PRODUCTION" : null
+                                }
+                            })" />
+                    }
+                </ul>
+            }
+        </div>
+    </aside>
+
+    <div class="splitter-v" id="splitter-v"></div>
+
+    @* ===================== Центр: вкладки редактора + низ: результаты ===================== *@
+    <div class="editor-and-results">
+        <section class="editor-panel">
+            <div class="editor-tabs-bar">
+                <div id="editor-tabs-list" style="display:flex;gap:2px">
+                    <button type="button" class="editor-tab-btn active" data-tab="tab-1">Запрос 1</button>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" title="Новая вкладка"
+                        hx-get="/editor?handler=Tab"
+                        hx-vals='js:{index: document.querySelectorAll("#editor-tabs-list .editor-tab-btn").length + 1}'
+                        hx-target="#editor-panes"
+                        hx-swap="beforeend">＋</button>
+                <span class="htmx-indicator">…</span>
+            </div>
+
+            <div class="editor-toolbar">
+                <button type="button" id="btn-run" class="btn btn-primary" title="Выполнить текущий statement (Ctrl+Enter)" data-action="run">
+                    &#9654; Выполнить
+                </button>
+                <button type="button" id="btn-run-script" class="btn" title="Выполнить весь скрипт (Alt+X)" data-action="run-script">
+                    &#9654;&#9654; Выполнить скрипт
+                </button>
+                <button type="button" id="btn-cancel" class="btn btn-danger" title="Отменить выполняющийся запрос" data-action="cancel" disabled>
+                    &#9632; Отмена
+                </button>
+
+                <span class="sep"></span>
+
+                <label for="editor-ds" style="margin:0">Датасорс</label>
+                <select id="editor-ds" name="ds" data-role="datasource-select"
+                        hx-get="/editor?handler=Schemas"
+                        hx-trigger="change"
+                        hx-target="#editor-schema"
+                        hx-swap="innerHTML">
+                    @foreach (var ds in Model.DataSources)
+                    {
+                        <option value="@ds.Id">@ds.Name@(ds.IsProduction ? " ⚠" : "")</option>
+                    }
+                </select>
+
+                <label for="editor-schema" style="margin:0">Схема</label>
+                <select id="editor-schema" name="schema" data-role="schema-select">
+                    <option value="">— по умолчанию —</option>
+                </select>
+
+                <span class="sep"></span>
+
+                <label class="checkbox-field" title="Автоматически подтверждать каждый statement">
+                    <input type="checkbox" id="editor-autocommit" data-role="autocommit" checked />
+                    Auto-commit
+                </label>
+                <span class="tx-indicator" id="tx-indicator" data-role="tx-indicator" title="Состояние транзакции">
+                    <span class="tx-dot"></span><span class="tx-text">нет транзакции</span>
+                </span>
+                <button type="button" id="btn-commit" class="btn btn-sm" data-action="commit" disabled title="Подтвердить транзакцию">Commit</button>
+                <button type="button" id="btn-rollback" class="btn btn-sm" data-action="rollback" disabled title="Откатить транзакцию">Rollback</button>
+            </div>
+
+            <div class="editor-tab-panes" id="editor-panes">
+                <div class="editor-pane active" id="tab-1" data-tab-id="tab-1">
+                    <textarea class="sql-editor-source"
+                              data-editor="sql"
+                              data-tab-id="tab-1"
+                              data-ds-id="@(Model.DataSources.FirstOrDefault()?.Id.ToString() ?? "")"
+                              placeholder="-- Введите SQL-запрос…&#10;-- Ctrl+Enter — выполнить, Alt+X — выполнить скрипт"></textarea>
+                </div>
+            </div>
+        </section>
+
+        <div class="splitter-h" id="splitter-h"></div>
+
+        <section class="results-panel" id="results-panel">
+            <div class="results-tabs">
+                <button type="button" class="editor-tab-btn active" data-results-tab="grid">Результаты</button>
+                <button type="button" class="editor-tab-btn" data-results-tab="messages">Сообщения</button>
+            </div>
+            <div class="results-body" id="results-container" data-role="results">
+                <div class="results-placeholder">Здесь появятся результаты запроса. Выполните запрос: Ctrl+Enter.</div>
+            </div>
+            <div class="results-status" id="results-status" data-role="results-status">Готово</div>
+        </section>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Переключение вкладок редактора (делегирование на панели вкладок)
+        (function () {
+            var tabsList = document.getElementById("editor-tabs-list");
+            var panes = document.getElementById("editor-panes");
+
+            function activate(tabId) {
+                tabsList.querySelectorAll(".editor-tab-btn").forEach(function (b) {
+                    b.classList.toggle("active", b.dataset.tab === tabId);
+                });
+                panes.querySelectorAll(".editor-pane").forEach(function (p) {
+                    p.classList.toggle("active", p.id === tabId);
+                });
+                document.dispatchEvent(new CustomEvent("wdv:tab-activated", { detail: { tabId: tabId } }));
+            }
+
+            tabsList.addEventListener("click", function (e) {
+                var btn = e.target.closest(".editor-tab-btn");
+                if (!btn) return;
+                if (e.target.classList.contains("editor-tab-close")) {
+                    // Закрытие вкладки
+                    var tabId = btn.dataset.tab;
+                    var pane = document.getElementById(tabId);
+                    if (pane) pane.remove();
+                    btn.remove();
+                    var first = tabsList.querySelector(".editor-tab-btn");
+                    if (first) activate(first.dataset.tab);
+                    return;
+                }
+                activate(btn.dataset.tab);
+            });
+
+            // После добавления новой вкладки через HTMX — активируем её
+            document.body.addEventListener("htmx:afterSwap", function (e) {
+                if (e.detail.target && e.detail.target.id === "editor-panes") {
+                    var last = panes.querySelector(".editor-pane:last-child");
+                    if (last) activate(last.id);
+                }
+            });
+
+            // Переключение вкладок панели результатов
+            document.querySelector(".results-tabs").addEventListener("click", function (e) {
+                var btn = e.target.closest("[data-results-tab]");
+                if (!btn) return;
+                document.querySelectorAll(".results-tabs .editor-tab-btn").forEach(function (b) {
+                    b.classList.toggle("active", b === btn);
+                });
+                document.dispatchEvent(new CustomEvent("wdv:results-tab", { detail: { tab: btn.dataset.resultsTab } }));
+            });
+        })();
+    </script>
+}

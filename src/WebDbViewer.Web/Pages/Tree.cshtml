@@ -1,0 +1,23 @@
+@page "/tree"
+@using WebDbViewer.Web.Pages.Shared
+@model WebDbViewer.Web.Pages.TreeModel
+@{
+    Layout = null;
+}
+@if (Model.ErrorMessage is not null)
+{
+    <ul class="tree"><li class="tree-empty alert-error">@Model.ErrorMessage</li></ul>
+}
+else if (Model.Nodes.Count == 0)
+{
+    <ul class="tree"><li class="tree-empty">Нет объектов</li></ul>
+}
+else
+{
+    <ul class="tree">
+        @foreach (var vm in Model.Nodes)
+        {
+            <partial name="_TreeNode" model="vm" />
+        }
+    </ul>
+}

@@ -1,0 +1,45 @@
+@page "/audit"
+@model WebDbViewer.Web.Pages.Audit.AuditIndexModel
+@{
+    ViewData["Title"] = "Журнал аудита";
+}
+<div class="page">
+    <h1>Журнал аудита запросов</h1>
+
+    <form id="audit-filter"
+          hx-get="/audit?handler=Query"
+          hx-target="#audit-results"
+          hx-swap="innerHTML"
+          hx-trigger="submit, load"
+          class="data-toolbar"
+          style="border:1px solid var(--border);border-radius:8px;margin-bottom:14px">
+        <div class="field">
+            <label for="audit-from">С даты</label>
+            <input type="date" id="audit-from" name="from" value="@Model.DefaultFrom" />
+        </div>
+        <div class="field">
+            <label for="audit-to">По дату</label>
+            <input type="date" id="audit-to" name="to" value="@Model.DefaultTo" />
+        </div>
+        <div class="field">
+            <label for="audit-user">Пользователь</label>
+            <input type="text" id="audit-user" name="userName" placeholder="все пользователи" />
+        </div>
+        <div class="field">
+            <label for="audit-ds">Датасорс</label>
+            <select id="audit-ds" name="dataSourceId">
+                <option value="">— все —</option>
+                @foreach (var ds in Model.DataSources)
+                {
+                    <option value="@ds.Id">@ds.Name</option>
+                }
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Показать</button>
+        <span class="htmx-indicator">Загрузка…</span>
+    </form>
+
+    <div id="audit-results">
+        <div class="alert alert-info">Задайте фильтры и нажмите «Показать».</div>
+    </div>
+</div>

@@ -1,0 +1,27 @@
+@*
+    Партиал панели inline-редактирования данных таблицы.
+    Подключение (интеграционный агент, Data.cshtml, рядом с тулбаром над гридом):
+        <partial name="DataEditPanel" model="Model.IsReadOnly" />
+    Модель — bool: датасорс только для чтения (панель скрыта и не активируется).
+    Кнопки обслуживает grid.js: он находит [data-edit-panel] в ближайшем общем контейнере грида;
+    если партиал не подключён — grid.js создаёт такую же панель сам (fallback).
+    Также в контейнер грида нужно добавить атрибут data-readonly="true|false".
+*@
+@model bool
+
+<div class="data-edit-panel" data-edit-panel data-readonly="@(Model ? "true" : "false")" hidden>
+    <button type="button" class="btn btn-primary" data-edit-action="save"
+            title="Отправить накопленные изменения в базу данных">
+        Сохранить (<span data-edit-count>0</span>)
+    </button>
+    <button type="button" class="btn" data-edit-action="discard" title="Отбросить все несохранённые изменения">
+        Отменить
+    </button>
+    <span style="width:12px"></span>
+    <button type="button" class="btn" data-edit-action="add-row" title="Добавить новую строку">
+        + Строка
+    </button>
+    <button type="button" class="btn" data-edit-action="delete-rows" title="Пометить выделенные строки на удаление">
+        Удалить строки
+    </button>
+</div>

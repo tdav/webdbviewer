@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WebDbViewer.Completion/WebDbViewer.Completion.csproj" />
+    <Project Path="src/WebDbViewer.Core/WebDbViewer.Core.csproj" />
+    <Project Path="src/WebDbViewer.Metadata/WebDbViewer.Metadata.csproj" />
+    <Project Path="src/WebDbViewer.Parsing/WebDbViewer.Parsing.csproj" />
+    <Project Path="src/WebDbViewer.Providers.Oracle/WebDbViewer.Providers.Oracle.csproj" />
+    <Project Path="src/WebDbViewer.Providers.Postgres/WebDbViewer.Providers.Postgres.csproj" />
+    <Project Path="src/WebDbViewer.Web/WebDbViewer.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WebDbViewer.Tests.Integration/WebDbViewer.Tests.Integration.csproj" />
+    <Project Path="tests/WebDbViewer.Tests.Unit/WebDbViewer.Tests.Unit.csproj" />
+  </Folder>
+</Solution>

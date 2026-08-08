@@ -1,0 +1,62 @@
+@model IReadOnlyList<WebDbViewer.Core.DataSourceConfig>
+@if (Model.Count == 0)
+{
+    <div class="alert alert-info">Подключений пока нет. Создайте первое подключение.</div>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Название</th>
+                <th>СУБД</th>
+                <th>Адрес</th>
+                <th>База данных</th>
+                <th>Пользователь</th>
+                <th>Пометки</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var ds in Model)
+            {
+                <tr>
+                    <td><strong>@ds.Name</strong></td>
+                    <td><span class="badge badge-kind">@(ds.Kind == DbKind.Postgres ? "PostgreSQL" : "Oracle")</span></td>
+                    <td>@ds.Host:@ds.Port</td>
+                    <td>@ds.Database</td>
+                    <td>@ds.Username</td>
+                    <td>
+                        @if (ds.IsProduction)
+                        {
+                            <span class="badge badge-prod" title="Производственная база — будьте осторожны!">PROD</span>
+                        }
+                        @if (ds.ReadOnly)
+                        {
+                            <span class="badge badge-ro" title="Только чтение">RO</span>
+                        }
+                        @if (ds.UseSsl)
+                        {
+                            <span class="badge badge-ssl" title="Шифрование соединения">SSL</span>
+                        }
+                    </td>
+                    <td style="white-space:nowrap">
+                        <button type="button" class="btn btn-sm"
+                                hx-get="/connections?handler=Form&id=@ds.Id"
+                                hx-target="#connection-form-area"
+                                hx-swap="innerHTML">
+                            Изменить
+                        </button>
+                        <button type="button" class="btn btn-sm btn-danger"
+                                hx-post="/connections?handler=Delete&id=@ds.Id"
+                                hx-target="#connections-list"
+                                hx-swap="innerHTML"
+                                hx-confirm="Удалить подключение «@ds.Name»? Это действие необратимо.">
+                            Удалить
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

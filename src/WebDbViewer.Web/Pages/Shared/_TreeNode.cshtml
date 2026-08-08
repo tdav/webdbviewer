@@ -1,0 +1,50 @@
+@using WebDbViewer.Web.Pages.Shared
+@model TreeNodeVm
+@{
+    var node = Model.Node;
+    var expandable = node.HasChildren && !Model.NoExpand;
+    var url = $"/tree?ds={Model.DsId}&path={Uri.EscapeDataString(Model.Path)}";
+    // Ссылка на просмотр данных для таблиц/представлений
+    var isDataObject = node.Type is DbObjectType.Table or DbObjectType.View or DbObjectType.MaterializedView;
+    var dataUrl = isDataObject && node.Schema is not null
+        ? $"/data/{Model.DsId}/{Uri.EscapeDataString(node.Schema)}/{Uri.EscapeDataString(node.Name)}"
+        : null;
+}
+<li class="tree-node @(node.IsSystem ? "system" : null)" data-type="@node.Type" data-name="@node.Name" data-schema="@node.Schema">
+    @if (expandable)
+    {
+        <span class="tree-label"
+              hx-get="@url"
+              hx-trigger="click once"
+              hx-target="closest li"
+              hx-swap="beforeend"
+              hx-include="#nav-hide-system"
+              onclick="var u = this.parentElement.querySelector(':scope > ul'); if (u) { u.hidden = !u.hidden; }"
+              title="@DbObjectIcons.Title(node.Type)@(node.Comment is not null ? " — " + node.Comment : "")">
+            <span class="tree-toggle">&#9656;</span><span class="tree-icon">@DbObjectIcons.For(node.Type)</span>
+            <span class="tree-name">@node.Name</span>
+            @if (dataUrl is not null)
+            {
+                <a class="tree-open-data" href="@dataUrl" title="Открыть данные" onclick="event.stopPropagation()">&#10530;</a>
+            }
+        </span>
+    }
+    else
+    {
+        <span class="tree-label" title="@DbObjectIcons.Title(node.Type)@(node.Comment is not null ? " — " + node.Comment : "")">
+            <span class="tree-toggle"></span><span class="tree-icon">@DbObjectIcons.For(node.Type)</span>
+            @if (dataUrl is not null)
+            {
+                <a href="@dataUrl" class="tree-name" title="Открыть данные">@node.Name</a>
+            }
+            else
+            {
+                <span class="tree-name">@node.Name</span>
+            }
+            @if (node.Schema is not null && Model.NoExpand)
+            {
+                <span class="tree-comment">@node.Schema</span>
+            }
+        </span>
+    }
+</li>

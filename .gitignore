@@ -1,0 +1,11 @@
+bin/
+obj/
+node_modules/
+*.user
+.vs/
+frontend/dist/
+appsettings.Development.local.json
+# Runtime-артефакты WebDbViewer.Web (ключи Data Protection, кэш метаданных, датасорсы)
+src/WebDbViewer.Web/keys/
+src/WebDbViewer.Web/metadata.db
+src/WebDbViewer.Web/App_Data/

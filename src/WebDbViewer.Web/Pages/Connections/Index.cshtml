@@ -1,0 +1,23 @@
+@page "/connections"
+@model WebDbViewer.Web.Pages.Connections.ConnectionsIndexModel
+@{
+    ViewData["Title"] = "Подключения";
+}
+<div class="page">
+    <h1>Подключения (датасорсы)</h1>
+
+    <p>
+        <button type="button" class="btn btn-primary"
+                hx-get="/connections?handler=Form"
+                hx-target="#connection-form-area"
+                hx-swap="innerHTML">
+            ＋ Новое подключение
+        </button>
+    </p>
+
+    <div id="connection-form-area"></div>
+
+    <div id="connections-list">
+        <partial name="_List" model="Model.DataSources" />
+    </div>
+</div>

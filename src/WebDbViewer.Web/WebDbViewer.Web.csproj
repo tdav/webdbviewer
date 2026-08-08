@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\WebDbViewer.Core\WebDbViewer.Core.csproj" />
+    <ProjectReference Include="..\WebDbViewer.Providers.Postgres\WebDbViewer.Providers.Postgres.csproj" />
+    <ProjectReference Include="..\WebDbViewer.Providers.Oracle\WebDbViewer.Providers.Oracle.csproj" />
+    <ProjectReference Include="..\WebDbViewer.Metadata\WebDbViewer.Metadata.csproj" />
+    <ProjectReference Include="..\WebDbViewer.Parsing\WebDbViewer.Parsing.csproj" />
+    <ProjectReference Include="..\WebDbViewer.Completion\WebDbViewer.Completion.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

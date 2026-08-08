@@ -1,0 +1,12 @@
+@page "/error"
+@model WebDbViewer.Web.Pages.ErrorModel
+@{
+    ViewData["Title"] = "Ошибка";
+}
+<div class="page">
+    <h1>Произошла ошибка</h1>
+    <div class="alert alert-error">
+        При обработке запроса произошла непредвиденная ошибка. Подробности — в журнале сервера.
+    </div>
+    <a href="/editor" class="btn">Вернуться в редактор</a>
+</div>

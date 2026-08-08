@@ -1,0 +1,68 @@
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Xsrf
+@{
+    var tokens = Xsrf.GetAndStoreTokens(Context);
+    var userName = Context.User.Identity?.IsAuthenticated == true ? Context.User.Identity!.Name : null;
+}
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@(ViewData["Title"] is string t ? t + " — WebDbViewer" : "WebDbViewer")</title>
+    <link rel="stylesheet" href="/css/app.css" />
+    <script>
+        // Применяем сохранённую тему до отрисовки, чтобы не мигало
+        (function () {
+            try {
+                var theme = localStorage.getItem("wdv-theme");
+                if (theme) document.documentElement.setAttribute("data-theme", theme);
+            } catch (e) { /* localStorage недоступен — остаёмся на теме по умолчанию */ }
+        })();
+    </script>
+</head>
+<body hx-headers='{"RequestVerificationToken": "@tokens.RequestToken"}'>
+    <header class="topbar">
+        <div class="topbar-brand">
+            <span class="brand-icon" aria-hidden="true">&#128451;</span>
+            <span class="brand-name">WebDbViewer</span>
+        </div>
+        <nav class="topbar-nav">
+            <a href="/editor" class="nav-link">SQL-редактор</a>
+            <a href="/connections" class="nav-link">Подключения</a>
+            <a href="/audit" class="nav-link">Аудит</a>
+        </nav>
+        <div class="topbar-actions">
+            <button type="button" id="theme-toggle" class="btn btn-ghost" title="Переключить тему">&#9681; Тема</button>
+            @if (userName is not null)
+            {
+                <span class="user-name" title="Текущий пользователь">&#128100; @userName</span>
+                <form method="post" action="/login?handler=Logout" class="inline-form">
+                    <input type="hidden" name="__RequestVerificationToken" value="@tokens.RequestToken" />
+                    <button type="submit" class="btn btn-ghost">Выйти</button>
+                </form>
+            }
+        </div>
+    </header>
+
+    <main class="main-content">
+        @RenderBody()
+    </main>
+
+    <div id="toast-area" aria-live="polite"></div>
+
+    <script src="/js/htmx.min.js"></script>
+    <script src="/js/app.js"></script>
+    <script src="/js/editor.js"></script>
+    <script src="/js/grid.js"></script>
+    <script>
+        // Переключатель тёмной/светлой темы (CSS-переменные)
+        document.getElementById("theme-toggle")?.addEventListener("click", function () {
+            var html = document.documentElement;
+            var next = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
+            html.setAttribute("data-theme", next);
+            try { localStorage.setItem("wdv-theme", next); } catch (e) { }
+        });
+    </script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

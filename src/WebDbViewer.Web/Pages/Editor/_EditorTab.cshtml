@@ -1,0 +1,16 @@
+@model WebDbViewer.Web.Pages.Editor.EditorTabVm
+@*
+    Новая вкладка редактора: панель (обычный swap в #editor-panes)
+    + кнопка вкладки (OOB-swap в #editor-tabs-list).
+*@
+<div class="editor-pane" id="@Model.TabId" data-tab-id="@Model.TabId">
+    <textarea class="sql-editor-source"
+              data-editor="sql"
+              data-tab-id="@Model.TabId"
+              data-ds-id="@(Model.DefaultDsId?.ToString() ?? "")"
+              placeholder="-- Введите SQL-запрос…"></textarea>
+</div>
+<button type="button" class="editor-tab-btn" data-tab="@Model.TabId"
+        hx-swap-oob="beforeend:#editor-tabs-list">
+    Запрос @Model.Index <span class="editor-tab-close" title="Закрыть вкладку">&times;</span>
+</button>
