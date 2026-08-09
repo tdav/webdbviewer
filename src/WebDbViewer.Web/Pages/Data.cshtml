@@ -58,11 +58,13 @@
     @* Контейнер виртуализованного грида: заполняется grid.js по data-атрибутам *@
     <div class="grid-container"
          id="data-grid"
-         data-grid="table-data"
+         data-result-grid
+         data-mode="table"
          data-ds-id="@Model.DsId"
          data-schema="@Model.Schema"
          data-table="@Model.Table"
-         data-database="@(Model.IsOtherDatabase ? Model.Database : null)">
+         data-database="@(Model.IsOtherDatabase ? Model.Database : null)"
+         data-readonly="@(Model.IsReadOnly ? "true" : "false")">
         <div class="results-placeholder">Загрузка данных таблицы…</div>
     </div>
 
