@@ -36,10 +36,10 @@ public sealed class AuditIndexModel : PageModel
     {
         if (_auditor is null)
         {
-            // Модуль аудита ещё не зарегистрирован (AddQueryAudit) — заглушка
+            // IQueryAuditor не зарегистрирован (нет AddPostgresMetaStore) — заглушка
             return Content(
                 "<div class=\"alert alert-info\">Модуль аудита ещё не подключён. " +
-                "Журнал станет доступен после включения AddQueryAudit().</div>",
+                "Журнал станет доступен после регистрации IQueryAuditor.</div>",
                 "text/html");
         }
 

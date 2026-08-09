@@ -81,7 +81,7 @@ dotnet test tests/WebDbViewer.Tests.Integration/WebDbViewer.Tests.Integration.cs
 
 ## Что осталось от файлового варианта
 
-Классы `DataSourceFileStore`, `SqliteSnapshotStore`, `SqliteQueryAuditor` и их unit-тесты сохранены,
-но в `Program.cs` больше не регистрируются. Вместе с ними в решении остаётся зависимость от
-`Microsoft.Data.Sqlite` (пакет `SQLitePCLRaw.lib.e_sqlite3` 2.1.11 имеет известную уязвимость
-NU1903) — при отказе от файлового режима эти классы, тесты и пакет удаляются одним шагом.
+SQLite-реализации (`SqliteSnapshotStore`, `SqliteQueryAuditor`), их DI-расширения и unit-тесты
+удалены вместе с пакетом `Microsoft.Data.Sqlite` — он тянул `SQLitePCLRaw.lib.e_sqlite3` 2.1.11
+с известной уязвимостью NU1903. Из файлового варианта остаётся `DataSourceFileStore`:
+класс сохранён, но в `Program.cs` не регистрируется.

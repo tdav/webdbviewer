@@ -1,6 +1,11 @@
 using System.Security.Claims;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Unicode;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.WebEncoders;
 using Serilog;
 using Serilog.Events;
 using WebDbViewer.Completion;
@@ -13,6 +18,21 @@ using WebDbViewer.Web;
 using WebDbViewer.Web.Api;
 using WebDbViewer.Web.Audit;
 using WebDbViewer.Web.Security;
+
+// ---------- Кодировка консоли: сообщения логов на русском ----------
+// Консоль Windows по умолчанию в OEM-кодировке (CP866), из-за чего кириллица превращается в мусор.
+// При перенаправлении вывода (docker logs, CI) поток уже UTF-8 — трогать его не нужно.
+if (!Console.IsOutputRedirected)
+{
+    try
+    {
+        Console.OutputEncoding = Encoding.UTF8;
+    }
+    catch (IOException)
+    {
+        // Консоли нет (служба Windows) — вывод всё равно никто не читает.
+    }
+}
 
 // ---------- Bootstrap-логгер: ловит ошибки старта (например, недоступную метабазу) до сборки DI ----------
 Log.Logger = new LoggerConfiguration()
@@ -52,6 +72,19 @@ try
         if (Directory.Exists(legacyKeys))
             options.ImportKeysFromDirectory = legacyKeys;
     });
+
+    // ---------- HTML/JS-энкодеры: не экранировать кириллицу ----------
+    // По умолчанию HtmlEncoder разрешает только Basic Latin, поэтому любой русский текст,
+    // выведенный через @Model.X, превращался в «&#x41D;&#x435;...» — страница раздувается
+    // в разы, а HTML нечитаем при отладке. Страницы отдаются в UTF-8, экранирование не нужно.
+    builder.Services.Configure<WebEncoderOptions>(options =>
+        options.TextEncoderSettings = new TextEncoderSettings(UnicodeRanges.All));
+
+    // JSON minimal API (сообщения об ошибках): по умолчанию кириллица уходит в \uXXXX-эскейпы.
+    // Create(UnicodeRanges.All) пропускает её как есть, но сохраняет экранирование <, >, & —
+    // в отличие от UnsafeRelaxedJsonEscaping, ответ остаётся безопасным при вставке в HTML.
+    builder.Services.ConfigureHttpJsonOptions(options =>
+        options.SerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All));
 
     // ---------- Razor Pages: авторизация по умолчанию для всех страниц, логин — анонимный ----------
     builder.Services.AddRazorPages(options =>
@@ -117,7 +150,21 @@ try
         app.UseExceptionHandler("/error");
     }
 
-    app.UseStaticFiles();
+    // ---------- Статика: явный charset=utf-8 ----------
+    // StaticFileMiddleware отдаёт «text/css» и «text/javascript» без charset, и браузер
+    // определяет кодировку эвристикой (для css/js — по кодировке страницы-владельца).
+    // В файлах есть кириллица, поэтому кодировку объявляем явно.
+    var contentTypeProvider = new FileExtensionContentTypeProvider();
+    contentTypeProvider.Mappings[".js"] = "text/javascript; charset=utf-8";
+    contentTypeProvider.Mappings[".mjs"] = "text/javascript; charset=utf-8";
+    contentTypeProvider.Mappings[".css"] = "text/css; charset=utf-8";
+    contentTypeProvider.Mappings[".json"] = "application/json; charset=utf-8";
+    contentTypeProvider.Mappings[".svg"] = "image/svg+xml; charset=utf-8";
+    contentTypeProvider.Mappings[".txt"] = "text/plain; charset=utf-8";
+    contentTypeProvider.Mappings[".csv"] = "text/csv; charset=utf-8";
+    contentTypeProvider.Mappings[".map"] = "application/json; charset=utf-8";
+
+    app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypeProvider });
 
     // Одна сводная запись на HTTP-запрос вместо нескольких событий ASP.NET Core.
     // Ставится после статики, чтобы не шуметь на css/js.

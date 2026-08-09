@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "webdbviewer",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/WebDbViewer.Web/WebDbViewer.Web.csproj", "--launch-profile", "http"],
+      "port": 5044
+    }
+  ]
+}

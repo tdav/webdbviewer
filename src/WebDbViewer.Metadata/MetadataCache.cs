@@ -9,7 +9,7 @@ namespace WebDbViewer.Metadata;
 
 /// <summary>
 /// Кэш метаданных per-datasource: снапшоты схем в памяти, single-flight загрузка,
-/// TTL-инвалидация, поиск (trie + humps), persistent-снапшот в SQLite.
+/// TTL-инвалидация, поиск (trie + humps), persistent-снапшот через <see cref="ISnapshotStore"/>.
 /// Учёт регистра: ключи словарей — OrdinalIgnoreCase, оригинальные имена сохраняются;
 /// квотирование идентификаторов — задача провайдера.
 /// </summary>

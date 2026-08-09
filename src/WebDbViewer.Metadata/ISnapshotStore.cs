@@ -5,7 +5,7 @@ namespace WebDbViewer.Metadata;
 /// <summary>Сохранённый на диске снапшот схемы вместе с идентификатором датасорса.</summary>
 public sealed record PersistedSnapshot(Guid DataSourceId, SchemaSnapshot Snapshot);
 
-/// <summary>Persistent-хранилище снапшотов схем (SQLite).</summary>
+/// <summary>Persistent-хранилище снапшотов схем (реализация — метабаза PostgreSQL).</summary>
 public interface ISnapshotStore
 {
     /// <summary>Сохраняет/обновляет снапшот (upsert по паре датасорс+схема).</summary>

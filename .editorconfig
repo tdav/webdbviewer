@@ -1,0 +1,21 @@
+# Кодировка и переводы строк для всего репозитория.
+# Файлы содержат кириллицу (комментарии, тексты UI, сообщения об ошибках),
+# поэтому кодировка фиксируется явно — иначе редактор на русскоязычной Windows
+# может сохранить файл в CP1251 и текст превратится в мусор.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{cs,cshtml,razor}]
+indent_size = 4
+
+[*.{js,mjs,json,css,html,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
