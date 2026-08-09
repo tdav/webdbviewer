@@ -1,0 +1,50 @@
+@using WebDbViewer.Web.Pages.Shared
+@model WebDbViewer.Web.Pages.Editor.DataTabVm
+@*
+    Вкладка с данными таблицы: панель (обычный swap в #editor-panes)
+    + кнопка вкладки (OOB-swap в #editor-tabs-list). Разметка кнопки должна
+    совпадать с _EditorTab.cshtml — вкладки в списке обязаны выглядеть одинаково.
+*@
+<div class="editor-pane data-pane" id="@Model.TabId" data-tab-id="@Model.TabId">
+    <div class="data-pane-head">
+        <strong title="Датасорс">@Model.DataSourceName</strong>
+        @if (Model.IsProduction)
+        {
+            <span class="badge badge-prod" title="Производственная база!">PROD</span>
+        }
+        @if (Model.IsReadOnly)
+        {
+            <span class="badge badge-ro">RO</span>
+        }
+        @if (Model.IsOtherDatabase)
+        {
+            <span class="badge badge-scope" title="Объект в другой базе данных сервера">@Model.Database</span>
+        }
+        <span class="tree-comment">@Model.Schema.@Model.Table</span>
+        <a class="data-pane-link" href="/data/@Model.DsId/@Uri.EscapeDataString(Model.Schema)/@Uri.EscapeDataString(Model.Table)@(Model.IsOtherDatabase ? "?db=" + Uri.EscapeDataString(Model.Database) : "")"
+           aria-label="Открыть отдельной страницей"
+           data-tip="Открыть эту таблицу отдельной страницей">@UiIcons.OpenData</a>
+    </div>
+
+    @* Контейнер виртуализованного грида: заполняется grid.js по data-атрибутам.
+       Сортировка — клик по заголовку колонки, правка ячеек — как на странице /data. *@
+    <div class="grid-container"
+         id="@(Model.TabId)-grid"
+         data-result-grid
+         data-mode="table"
+         data-ds-id="@Model.DsId"
+         data-schema="@Model.Schema"
+         data-table="@Model.Table"
+         data-database="@(Model.IsOtherDatabase ? Model.Database : null)"
+         data-readonly="@(Model.IsReadOnly ? "true" : "false")">
+        <div class="results-placeholder">Загрузка данных таблицы…</div>
+    </div>
+</div>
+@* Обёртка обязательна: при hx-swap-oob со стратегией «beforeend:» htmx вставляет
+   в цель СОДЕРЖИМОЕ oob-элемента, а не его самого. *@
+<div hx-swap-oob="beforeend:#editor-tabs-list">
+    <button type="button" class="editor-tab-btn" data-tab="@Model.TabId" title="@Model.Title">
+        <span class="editor-tab-label">@Model.Title</span>
+        <span class="editor-tab-close" title="Закрыть вкладку" aria-hidden="true">&times;</span>
+    </button>
+</div>

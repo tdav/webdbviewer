@@ -15,6 +15,9 @@ public sealed record TreeNodeVm
     /// <summary>База данных, в которой находится объект; null — база из конфигурации датасорса.</summary>
     public string? Database { get; init; }
 
+    /// <summary>СУБД датасорса; задаётся у узлов-баз, чтобы иконка отличала Oracle от PostgreSQL.</summary>
+    public DbKind? Kind { get; init; }
+
     /// <summary>true — узел нельзя раскрывать (результат поиска и т.п.).</summary>
     public bool NoExpand { get; init; }
 
@@ -130,9 +133,28 @@ public static class DbObjectIcons
     private static readonly HtmlString fallbackIcon =
         Icon("<circle cx='8' cy='8' r='2.4'/>");
 
+    // Цилиндр с буквой СУБД: датасорсы Oracle и PostgreSQL должны различаться
+    // раньше, чем прочитана подпись. Набор монохромный (DESIGN.md), поэтому
+    // различие в форме, а не в цвете; средняя перемычка цилиндра убрана под букву.
+    private static HtmlString KindIcon(string letter) => Icon(
+        "<ellipse cx='8' cy='3.6' rx='5' ry='2.1'/>" +
+        "<path d='M3 3.6v8.8c0 1.16 2.24 2.1 5 2.1s5-.94 5-2.1V3.6'/>" +
+        "<text x='8' y='12.2' fill='currentColor' stroke='none' font-size='7.5' font-weight='600' " +
+        "font-family='system-ui, sans-serif' text-anchor='middle'>" + letter + "</text>");
+
+    private static readonly Dictionary<DbKind, HtmlString> kindIcons = new()
+    {
+        [DbKind.Postgres] = KindIcon("P"),
+        [DbKind.Oracle] = KindIcon("O"),
+    };
+
     /// <summary>Возвращает готовую SVG-иконку для типа объекта.</summary>
     public static IHtmlContent For(DbObjectType type) =>
         icons.TryGetValue(type, out var icon) ? icon : fallbackIcon;
+
+    /// <summary>Иконка узла базы данных с меткой СУБД; для остальных типов — обычная иконка.</summary>
+    public static IHtmlContent For(DbObjectType type, DbKind? kind) =>
+        type == DbObjectType.Database && kind is { } k ? kindIcons[k] : For(type);
 
     /// <summary>Русское название типа объекта (для подсказок).</summary>
     public static string Title(DbObjectType type) => type switch
@@ -166,4 +188,10 @@ public static class DbObjectIcons
         DbObjectType.TextSearchDictionary => "Словарь полнотекстового поиска",
         _ => type.ToString()
     };
+
+    /// <summary>Название типа с уточнением СУБД для узлов-баз.</summary>
+    public static string Title(DbObjectType type, DbKind? kind) =>
+        type == DbObjectType.Database && kind is { } k
+            ? "База данных " + (k == DbKind.Oracle ? "Oracle" : "PostgreSQL")
+            : Title(type);
 }

@@ -49,6 +49,7 @@
                                 DsId = ds.Id,
                                 Path = "",
                                 ReadOnly = ds.ReadOnly,
+                                Kind = ds.Kind,
                                 Node = new DbObjectNode
                                 {
                                     Name = ds.Name,
@@ -215,6 +216,18 @@
                     p.classList.toggle("active", p.id === tabId);
                 });
                 document.dispatchEvent(new CustomEvent("wdv:tab-activated", { detail: { tabId: tabId } }));
+                syncRunButtons();
+            }
+
+            // На вкладке с данными редактора нет, и активной остаётся textarea другой
+            // вкладки: нажатие «Выполнить» отправило бы в базу невидимый запрос.
+            // aria-disabled уважает обработчик кнопок в editor.js.
+            function syncRunButtons() {
+                var pane = panes.querySelector(".editor-pane.active");
+                var noSql = !!pane && !pane.querySelector("textarea[data-sql-editor]");
+                document.querySelectorAll('[data-action="run"], [data-action="run-script"]').forEach(function (b) {
+                    b.setAttribute("aria-disabled", String(noSql));
+                });
             }
 
             // Полоса прокрутки списка скрыта (иначе панель прыгает по высоте),

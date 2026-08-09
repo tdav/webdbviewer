@@ -62,7 +62,7 @@ public sealed class TreeModel : PageModel
             if (withDatabaseLevel && segments.Count == 0)
             {
                 var databases = await provider.GetDatabasesAsync(session.Connection, includeSystem: !hideSystem, ct);
-                Nodes = ToNodes(ds, path, databases, readOnly: config.ReadOnly);
+                Nodes = ToNodes(ds, path, databases, readOnly: config.ReadOnly, kind: config.Kind);
                 return;
             }
 
@@ -125,7 +125,8 @@ public sealed class TreeModel : PageModel
 
     /// <summary>Преобразует объекты БД в модели узлов дерева (путь к детям = путь родителя + имя узла).</summary>
     private static IReadOnlyList<TreeNodeVm> ToNodes(
-        Guid ds, string? parentPath, IReadOnlyList<DbObjectNode> nodes, string? database = null, bool readOnly = false) =>
+        Guid ds, string? parentPath, IReadOnlyList<DbObjectNode> nodes, string? database = null,
+        bool readOnly = false, DbKind? kind = null) =>
         nodes
             .Select(n => new TreeNodeVm
             {
@@ -133,6 +134,7 @@ public sealed class TreeModel : PageModel
                 Node = n,
                 Database = database,
                 ReadOnly = readOnly,
+                Kind = kind,
                 Path = AppendSegment(parentPath, n.Name)
             })
             .ToList();

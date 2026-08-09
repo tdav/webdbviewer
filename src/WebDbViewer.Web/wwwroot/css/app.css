@@ -739,6 +739,22 @@ a.tree-name:hover { color: var(--accent-text); }
 }
 .editor-pane .cm-editor { height: 100%; }
 
+/* Вкладка с данными таблицы: шапка с бейджами и грид на всю оставшуюся высоту.
+   .editor-pane позиционирован абсолютно, поэтому колонку задаём здесь. */
+.editor-pane.data-pane.active { display: flex; flex-direction: column; min-height: 0; }
+.data-pane-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    padding: var(--space-2xs) var(--space-sm);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+}
+.data-pane-head .tree-comment { font-size: 13px; }
+.data-pane-link { margin-left: auto; display: inline-flex; align-items: center; color: var(--text-muted); }
+.data-pane-link:hover { color: var(--accent-text); text-decoration: none; }
+
 /* ---------- Панель результатов ---------- */
 .results-panel {
     display: flex;

@@ -11,6 +11,15 @@
         ? $"/data/{Model.DsId}/{Uri.EscapeDataString(node.Schema)}/{Uri.EscapeDataString(node.Name)}{dbQuery}"
         : null;
 
+    // Обычный клик открывает данные вкладкой рядом с редактором; href остаётся ради
+    // Ctrl+клика и средней кнопки — они уводят на отдельную страницу, как раньше.
+    var dataTabUrl = dataUrl is null ? null : string.Concat(
+        "/editor?handler=DataTab",
+        "&ds=", Model.DsId.ToString(),
+        "&schema=", Uri.EscapeDataString(node.Schema!),
+        "&table=", Uri.EscapeDataString(node.Name),
+        Model.Database is { Length: > 0 } dataDb ? "&db=" + Uri.EscapeDataString(dataDb) : "");
+
     // Атрибуты узла: у папок-категорий — русское название и счётчик, у объектов — уточнение
     // (сигнатура перегрузки, таблица-владелец триггера и т.п.).
     var attrs = node.Attributes;
@@ -21,7 +30,7 @@
     var suffix = isFolder ? Attr("count")
         : isRoutine ? "(" + (attrs is not null && attrs.TryGetValue("signature", out var s) ? s : "") + ")"
         : Attr("table") ?? Attr("baseType") ?? Attr("typeKind") ?? Attr("provider");
-    var tipTitle = isFolder ? label : DbObjectIcons.Title(node.Type);
+    var tipTitle = isFolder ? label : DbObjectIcons.Title(node.Type, Model.Kind);
 
     // Кнопка «показать DDL»: только у настоящих объектов схемы (не у папок-категорий,
     // схем, баз и колонок) и только для типов, DDL которых умеет строить генератор.
@@ -81,8 +90,15 @@
             @if (dataUrl is not null)
             {
                 <a class="tree-open-data" href="@dataUrl"
+                   hx-get="@dataTabUrl"
+                   @* Ctrl/Cmd/Shift+клик оставляем браузеру: это привычный способ
+                      открыть ссылку отдельной вкладкой или окном. *@
+                   hx-trigger="click[!ctrlKey&amp;&amp;!metaKey&amp;&amp;!shiftKey]"
+                   hx-vals='js:{index: window.wdvNextTabIndex ? window.wdvNextTabIndex() : 1}'
+                   hx-target="#editor-panes"
+                   hx-swap="beforeend"
                    aria-label="Открыть данные: @node.Name"
-                   data-tip="Открыть данные таблицы «@node.Name»"
+                   data-tip="Открыть данные таблицы «@node.Name» во вкладке (Ctrl+клик — отдельной страницей)"
                    onclick="event.stopPropagation()">@UiIcons.OpenData</a>
             }
         </span>
@@ -103,7 +119,7 @@
               hx-swap="beforeend"
               hx-include="#nav-hide-system"
               title="@tipTitle@(node.Comment is not null ? " — " + node.Comment : "")">
-            <span class="tree-toggle">&#9656;</span><span class="tree-icon">@DbObjectIcons.For(node.Type)</span>
+            <span class="tree-toggle">&#9656;</span><span class="tree-icon">@DbObjectIcons.For(node.Type, Model.Kind)</span>
             <span class="tree-name">@label</span>
             @if (suffix is not null)
             {
@@ -115,10 +131,15 @@
     else
     {
         <span class="tree-label" title="@tipTitle@(node.Comment is not null ? " — " + node.Comment : "")">
-            <span class="tree-toggle"></span><span class="tree-icon">@DbObjectIcons.For(node.Type)</span>
+            <span class="tree-toggle"></span><span class="tree-icon">@DbObjectIcons.For(node.Type, Model.Kind)</span>
             @if (dataUrl is not null)
             {
-                <a href="@dataUrl" class="tree-name" title="Открыть данные">@label</a>
+                <a href="@dataUrl" class="tree-name" title="Открыть данные во вкладке (Ctrl+клик — отдельной страницей)"
+                   hx-get="@dataTabUrl"
+                   hx-trigger="click[!ctrlKey&amp;&amp;!metaKey&amp;&amp;!shiftKey]"
+                   hx-vals='js:{index: window.wdvNextTabIndex ? window.wdvNextTabIndex() : 1}'
+                   hx-target="#editor-panes"
+                   hx-swap="beforeend">@label</a>
             }
             else
             {
