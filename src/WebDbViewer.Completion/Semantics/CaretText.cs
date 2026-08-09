@@ -35,6 +35,72 @@ internal static class CaretText
         return i > 0 && beforeWord[i - 1] == ',';
     }
 
+    /// <summary>Каретка стоит сразу после оператора приведения типа PostgreSQL «::».</summary>
+    public static bool EndsWithCastOperator(string beforeWord)
+    {
+        var i = beforeWord.Length;
+        while (i > 0 && char.IsWhiteSpace(beforeWord[i - 1]))
+            i--;
+        return i >= 2 && beforeWord[i - 1] == ':' && beforeWord[i - 2] == ':';
+    }
+
+    /// <summary>
+    /// Слова, после которых скобка открывает не вызов функции: «SELECT (a + b)», «id IN (…)»,
+    /// «EXISTS (…)», «OVER (…)». Без этого списка именем функции считается любое слово слева.
+    /// </summary>
+    private static readonly HashSet<string> NotCallableBeforeParen = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SELECT", "FROM", "WHERE", "VALUES", "IN", "EXISTS", "AND", "OR", "NOT", "ON", "BY",
+        "ALL", "ANY", "SOME", "INTO", "SET", "UNION", "INTERSECT", "EXCEPT", "CASE", "WHEN",
+        "THEN", "ELSE", "RETURNING", "USING", "JOIN", "AS", "OVER", "GROUP", "ORDER", "HAVING",
+        "LIMIT", "OFFSET", "DISTINCT", "WITH", "TABLE", "UPDATE", "DELETE", "INSERT", "IS",
+        "BETWEEN", "LIKE", "PARTITION", "WITHIN", "FILTER", "LATERAL", "PRIMARY", "FOREIGN",
+        "UNIQUE", "CHECK", "REFERENCES", "CONSTRAINT", "KEY", "COLUMNS",
+    };
+
+    /// <summary>
+    /// Вызов, внутри скобок которого стоит каретка: имя функции и номер аргумента с нуля.
+    /// «round(x, |» → («round», 1). null — каретка не внутри вызова.
+    /// ponytail: скобки и запятые внутри строковых литералов считаются наравне с обычными;
+    /// для подсказки аргументов этого достаточно, полный лексер здесь не окупается.
+    /// </summary>
+    public static (string Name, int ArgumentIndex)? EnclosingCall(string beforeWord)
+    {
+        var depth = 0;
+        var argumentIndex = 0;
+        for (var i = beforeWord.Length - 1; i >= 0; i--)
+        {
+            var c = beforeWord[i];
+            if (c == ')')
+            {
+                depth++;
+            }
+            else if (c == '(')
+            {
+                if (depth > 0)
+                {
+                    depth--;
+                    continue;
+                }
+                var end = i;
+                while (end > 0 && char.IsWhiteSpace(beforeWord[end - 1]))
+                    end--;
+                var start = end;
+                while (start > 0 && IsWordChar(beforeWord[start - 1]))
+                    start--;
+                if (start == end)
+                    return null;
+                var name = beforeWord[start..end];
+                return NotCallableBeforeParen.Contains(name) ? null : (name, argumentIndex);
+            }
+            else if (c == ',' && depth == 0)
+            {
+                argumentIndex++;
+            }
+        }
+        return null;
+    }
+
     /// <summary>
     /// Цепочка квалификаторов перед кареткой: «a.| » → [a]; «schema.table.| » → [schema, table].
     /// Кавычки идентификаторов снимаются. Пустой список — квалификатора нет.

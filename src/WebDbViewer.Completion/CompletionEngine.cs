@@ -15,6 +15,7 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
     // Базовые приоритеты сортировки (меньше = выше в списке).
     private const int PriorityContextBoost = 5;
     private const int PriorityColumn = 10;
+    private const int PriorityFunction = 15;
     private const int PriorityTable = 20;
     private const int PriorityKeyword = 30;
 
@@ -34,6 +35,7 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
 
     private readonly IMetadataCache _metadata;
     private readonly SemanticCompleter _semantic;
+    private readonly RecentObjects _recent = new();
     private readonly object _cacheLock = new();
 
     // Кэш последнего результата: (хэш sql, каретка, диалект, датасорс, схема, опции) → items.
@@ -42,7 +44,7 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
     public CompletionEngine(IMetadataCache metadata)
     {
         _metadata = metadata;
-        _semantic = new SemanticCompleter(metadata);
+        _semantic = new SemanticCompleter(metadata, _recent);
     }
 
     public Task<IReadOnlyList<CompletionItem>> CompleteAsync(
@@ -66,11 +68,15 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
                 return last.Items;
         }
 
+        // Таблицы из текста запоминаются как «недавние»: в схеме из сотен таблиц это
+        // единственный дешёвый признак того, с чем пользователь работает сейчас.
+        _recent.Touch(request.DataSourceId, BuildAliasMap(sql).Values);
+
         // ---------- 1. Грамматический анализ префикса (antlr4-c3); ошибки не фатальны.
         GrammarCandidates grammar;
         try
         {
-            grammar = GrammarAnalyzer.Analyze(prefix, dialect);
+            grammar = GrammarAnalyzer.Analyze(sql, caret, dialect);
         }
         catch
         {
@@ -113,13 +119,24 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
                 await AddTablesAsync(items, request, snapshot, wordPrefix, tablePriority, dialect, ct);
 
             if (suggestColumns && snapshot is not null)
+            {
                 AddColumns(items, snapshot, sql, alias, wordPrefix, columnPriority, dialect);
+                if (alias is null)
+                    AddRoutines(items, snapshot, wordPrefix, dialect);
+            }
         }
 
         // ---------- 4. Ключевые слова из грамматики (при «алиас.» не имеют смысла).
         if (alias is null)
         {
-            foreach (var kw in grammar.Keywords.OrderBy(k => k, StringComparer.Ordinal))
+            // Грамматика не дала кандидатов — сбой разбора или позиция, которую она не описывает.
+            // Подставляем словарь диалекта, но только при начатом слове: иначе несколько тысяч
+            // ключевых слов вытеснят из лимита объекты схемы.
+            var keywords = grammar.Keywords.Count == 0 && wordPrefix.Length > 0
+                ? GrammarAnalyzer.DialectKeywords(dialect)
+                : grammar.Keywords;
+
+            foreach (var kw in keywords.OrderBy(k => k, StringComparer.Ordinal))
             {
                 if (wordPrefix.Length > 0 && !kw.StartsWith(wordPrefix, StringComparison.OrdinalIgnoreCase))
                     continue;
@@ -147,6 +164,31 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
             _lastResult = (cacheKey, result);
         }
         return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<SignatureInfo?> DescribeSignatureAsync(
+        CompletionRequest request, DbKind dialect, CancellationToken ct)
+    {
+        var sql = request.SqlText ?? string.Empty;
+        var snapshots = new List<SchemaSnapshot>();
+
+        if (await TryGetSchemaSnapshotAsync(request, dialect, ct) is { } primary)
+            snapshots.Add(primary);
+        try
+        {
+            foreach (var snapshot in await _metadata.GetLoadedSchemasAsync(request.DataSourceId, ct))
+            {
+                if (!snapshots.Any(s => string.Equals(s.SchemaName, snapshot.SchemaName, StringComparison.OrdinalIgnoreCase)))
+                    snapshots.Add(snapshot);
+            }
+        }
+        catch
+        {
+            // Кэш недоступен — остаются встроенные функции диалекта.
+        }
+
+        return SignatureHelp.Describe(sql, request.CaretOffset, dialect, snapshots);
     }
 
     // ================================================================== Метаданные
@@ -265,6 +307,69 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
             }
         }
     }
+
+    /// <summary>Функции и процедуры схемы — там же, где предлагаются колонки.</summary>
+    private static void AddRoutines(
+        List<CompletionItem> items, SchemaSnapshot snapshot, string wordPrefix, DbKind dialect)
+    {
+        foreach (var routine in snapshot.Routines)
+        {
+            if (wordPrefix.Length > 0 && !routine.Name.StartsWith(wordPrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+            items.Add(RoutineItem(routine, PriorityFunction, dialect));
+        }
+    }
+
+    /// <summary>
+    /// Элемент вызова процедуры или функции. Вставка открывает скобку: аргументы всё равно
+    /// набираются вручную, а закрывающую скобку ставит сам редактор (closeBrackets).
+    /// </summary>
+    internal static CompletionItem RoutineItem(RoutineInfo routine, int priority, DbKind dialect)
+    {
+        var kindWord = routine.Type == DbObjectType.Procedure ? "процедура" : "функция";
+        var signature = string.IsNullOrWhiteSpace(routine.ArgumentsSignature)
+            ? $"{routine.Schema}.{routine.Name}()"
+            : $"{routine.Schema}.{routine.Name}({routine.ArgumentsSignature})";
+        var documentation = string.IsNullOrWhiteSpace(routine.ReturnType)
+            ? routine.Comment
+            : string.IsNullOrWhiteSpace(routine.Comment)
+                ? $"{kindWord}, возвращает {routine.ReturnType}"
+                : $"{routine.Comment}\n\n{kindWord}, возвращает {routine.ReturnType}";
+
+        return new CompletionItem
+        {
+            Label = routine.Name,
+            Kind = "function",
+            InsertText = SqlIdentifierQuoting.Quote(routine.Name, dialect) + "(",
+            Detail = signature,
+            Documentation = documentation,
+            SortPriority = priority,
+        };
+    }
+
+    /// <summary>
+    /// Элемент встроенного средства диалекта. Функция вставляется с открывающей скобкой,
+    /// константа (SYSDATE, ROWNUM, current_date) — без неё.
+    /// </summary>
+    internal static CompletionItem BuiltinItem(BuiltinEntry entry, int priority) => new()
+    {
+        Label = entry.Name,
+        Kind = entry.Signature is null ? "constant" : "function",
+        InsertText = entry.Signature is null ? entry.Name : entry.Name + "(",
+        Detail = entry.Signature ?? entry.Summary,
+        Documentation = entry.Signature is null ? null : entry.Summary,
+        SortPriority = priority,
+    };
+
+    /// <summary>Элемент типа данных: в позиции типа вставляется как есть, без квотирования.</summary>
+    internal static CompletionItem DataTypeItem(string type, int priority) => new()
+    {
+        Label = type,
+        Kind = "type",
+        InsertText = type,
+        Detail = "тип данных",
+        SortPriority = priority,
+    };
 
     private static TableInfo? FindTable(SchemaSnapshot snapshot, string name)
     {

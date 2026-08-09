@@ -113,6 +113,44 @@ public sealed class EditorIndexModel : PageModel
     }
 
     /// <summary>
+    /// Вкладка с данными таблицы (hx-get="/editor?handler=DataTab&amp;ds=…&amp;schema=…&amp;table=…").
+    /// Тот же грид, что и на странице /data: содержимое читает grid.js по data-атрибутам,
+    /// поэтому здесь только разметка панели.
+    /// </summary>
+    public async Task<IActionResult> OnGetDataTabAsync(
+        int index, Guid ds, string? schema, string? table, string? db, CancellationToken ct)
+    {
+        if (index < 1)
+            index = 1;
+
+        var config = await _store.GetAsync(ds, ct);
+        if (config is null || string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(table))
+        {
+            DataSources = await _store.GetAllAsync(ct);
+            return Partial("_EditorTab", new EditorTabVm
+            {
+                Index = index,
+                Title = table ?? "Данные",
+                Content = "-- Не удалось открыть данные: датасорс или таблица не заданы.",
+            });
+        }
+
+        var database = string.IsNullOrWhiteSpace(db) ? config.Database : db;
+        return Partial("_DataTab", new DataTabVm
+        {
+            Index = index,
+            DsId = ds,
+            Schema = schema,
+            Table = table,
+            Database = database,
+            IsOtherDatabase = !string.Equals(database, config.Database, StringComparison.Ordinal),
+            DataSourceName = config.Name,
+            IsProduction = config.IsProduction,
+            IsReadOnly = config.ReadOnly,
+        });
+    }
+
+    /// <summary>
     /// Область выполнения: список баз (если доступны) и схем выбранной базы
     /// (hx-get="/editor?handler=Scope&amp;ds=...&amp;db=...").
     /// </summary>
@@ -191,4 +229,26 @@ public sealed record EditorTabVm
     public string? Content { get; init; }
 
     public string TabId => $"tab-{Index}";
+}
+
+/// <summary>Модель вкладки с данными таблицы для partial _DataTab.</summary>
+public sealed record DataTabVm
+{
+    public required int Index { get; init; }
+    public required Guid DsId { get; init; }
+    public required string Schema { get; init; }
+    public required string Table { get; init; }
+
+    /// <summary>База данных объекта: из параметра db либо база датасорса.</summary>
+    public required string Database { get; init; }
+
+    /// <summary>true — объект в базе, отличной от базы подключения (навигатор по всем базам).</summary>
+    public bool IsOtherDatabase { get; init; }
+
+    public string DataSourceName { get; init; } = "";
+    public bool IsProduction { get; init; }
+    public bool IsReadOnly { get; init; }
+
+    public string TabId => $"tab-{Index}";
+    public string Title => $"{Schema}.{Table}";
 }

@@ -13,6 +13,7 @@ internal sealed class SemanticCompleter
 {
     private static class Priority
     {
+        public const int DataType = 0;        // в позиции типа других осмысленных кандидатов нет
         public const int FkJoinSnippet = 0;   // готовое условие JOIN … ON по FK — всегда сверху
         public const int StarExpand = 1;      // «t.* → колонки»
         public const int SelectAlias = 4;     // алиасы SELECT-списка в ORDER/GROUP BY
@@ -20,7 +21,9 @@ internal sealed class SemanticCompleter
         public const int FkRelatedTable = 6;  // таблицы с FK-связями к уже используемым
         public const int ContextTable = 8;    // прочие таблицы в позиции таблицы
         public const int OtherColumn = 10;    // колонки вне распознанного scope
+        public const int Routine = 12;        // функции и процедуры схемы
         public const int SchemaName = 15;
+        public const int Builtin = 18;        // встроенные функции и константы диалекта
     }
 
     /// <summary>Слова, после которых каретка стоит в позиции имени таблицы.</summary>
@@ -28,8 +31,13 @@ internal sealed class SemanticCompleter
         new(StringComparer.OrdinalIgnoreCase) { "FROM", "JOIN", "INTO", "UPDATE", "TABLE", "LATERAL" };
 
     private readonly IMetadataCache _metadata;
+    private readonly RecentObjects _recent;
 
-    public SemanticCompleter(IMetadataCache metadata) => _metadata = metadata;
+    public SemanticCompleter(IMetadataCache metadata, RecentObjects recent)
+    {
+        _metadata = metadata;
+        _recent = recent;
+    }
 
     public async Task<List<CompletionItem>?> TryCompleteAsync(
         CompletionRequest request, DbKind dialect, CompletionOptions options,
@@ -49,6 +57,17 @@ internal sealed class SemanticCompleter
         var snapshots = await GetSnapshotsAsync(request, defaultSnapshot, ct);
 
         var items = new List<CompletionItem>(64);
+
+        // ---------- Позиция типа данных: CAST(… AS |) либо «выражение::» в PostgreSQL.
+        if (IsDataTypePosition(beforeWord, prevWord, dialect))
+        {
+            foreach (var type in DialectVocabulary.DataTypes(dialect))
+            {
+                if (HumpsMatcher.MatchRank(wordPrefix, type) is { } rank)
+                    items.Add(CompletionEngine.DataTypeItem(type, Priority.DataType + rank));
+            }
+            return items;
+        }
 
         // ---------- «квалификатор.»: колонки алиаса/таблицы/CTE или объекты схемы.
         if (qualifier.Count > 0)
@@ -88,6 +107,7 @@ internal sealed class SemanticCompleter
         {
             AddFkJoinSnippets(items, scope, snapshots, caret, wordPrefix, dialect);
             AddScopeColumns(items, scope, snapshots, wordPrefix, dialect, defaultSnapshot);
+            AddRoutines(items, snapshots, wordPrefix, dialect);
             return items;
         }
 
@@ -96,6 +116,17 @@ internal sealed class SemanticCompleter
         {
             AddSelectAliases(items, scope, wordPrefix, dialect);
             AddScopeColumns(items, scope, snapshots, wordPrefix, dialect, defaultSnapshot);
+            AddRoutines(items, snapshots, wordPrefix, dialect);
+            AddBuiltins(items, dialect, wordPrefix);
+            return items;
+        }
+
+        // ---------- VALUES (…): колонки здесь не при чём, осмысленны значения и функции.
+        if (clause == "VALUES")
+        {
+            AddRoutines(items, snapshots, wordPrefix, dialect);
+            AddBuiltins(items, dialect, wordPrefix);
+            AddValueKeywords(items, wordPrefix);
             return items;
         }
 
@@ -103,10 +134,25 @@ internal sealed class SemanticCompleter
         if (clause is "SELECT" or "WHERE" or "HAVING" or "ON" or "SET" || grammarSuggestsColumns)
         {
             AddScopeColumns(items, scope, snapshots, wordPrefix, dialect, defaultSnapshot);
+            AddRoutines(items, snapshots, wordPrefix, dialect);
+            AddBuiltins(items, dialect, wordPrefix);
             return items;
         }
 
         return null;
+    }
+
+    /// <summary>Каретка в позиции имени типа: CAST(… AS |) либо «выражение::» в PostgreSQL.</summary>
+    private static bool IsDataTypePosition(string beforeWord, string? prevWord, DbKind dialect)
+    {
+        // «::» — синтаксис PostgreSQL; в Oracle это была бы метка, а не приведение типа.
+        if (dialect != DbKind.Oracle && CaretText.EndsWithCastOperator(beforeWord))
+            return true;
+
+        // AS встречается и в алиасах, поэтому одного слова мало — нужен охватывающий CAST(.
+        return prevWord == "AS"
+               && CaretText.EnclosingCall(beforeWord) is { } call
+               && string.Equals(call.Name, "CAST", StringComparison.OrdinalIgnoreCase);
     }
 
     // ================================================================== Квалификатор
@@ -159,8 +205,15 @@ internal sealed class SemanticCompleter
                 foreach (var t in schemaSnap.Tables)
                     AddTableItem(items, t.Name, t.Schema, t.Type, t.Comment, wordPrefix,
                         Priority.ContextTable, aliasFactory: null, dialect);
+                AddRoutines(items, [schemaSnap], wordPrefix, dialect);
                 return true;
             }
+
+            // 4) Oracle: квалификатор не опознан ни как источник строк, ни как схема. Осмысленно
+            // остаётся два случая — пакет SYS и последовательность. Пустой список хуже обоих.
+            if (dialect == DbKind.Oracle)
+                return AddOraclePackageOrSequence(items, q, wordPrefix);
+
             return false;
         }
 
@@ -179,6 +232,38 @@ internal sealed class SemanticCompleter
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// «DBMS_OUTPUT.» → подпрограммы пакета; любой другой неопознанный квалификатор в Oracle
+    /// чаще всего последовательность, поэтому предлагаются NEXTVAL и CURRVAL.
+    /// </summary>
+    private static bool AddOraclePackageOrSequence(List<CompletionItem> items, string qualifier, string wordPrefix)
+    {
+        var prefix = qualifier + ".";
+        var packageMembers = DialectVocabulary.Functions(DbKind.Oracle)
+            .Where(f => f.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (packageMembers.Count > 0)
+        {
+            foreach (var entry in packageMembers)
+            {
+                var member = entry.Name[prefix.Length..];
+                if (HumpsMatcher.MatchRank(wordPrefix, member) is not { } rank)
+                    continue;
+                // Квалификатор уже набран — вставляется только имя подпрограммы.
+                items.Add(CompletionEngine.BuiltinItem(entry with { Name = member }, Priority.Routine + rank));
+            }
+            return items.Count > 0;
+        }
+
+        foreach (var entry in DialectVocabulary.OracleSequenceMembers)
+        {
+            if (HumpsMatcher.MatchRank(wordPrefix, entry.Name) is { } rank)
+                items.Add(CompletionEngine.BuiltinItem(entry, Priority.Routine + rank));
+        }
+        return items.Count > 0;
     }
 
     /// <summary>Колонки источника + сниппет «q.* → колонки».</summary>
@@ -228,6 +313,22 @@ internal sealed class SemanticCompleter
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // Oracle: DUAL принадлежит SYS и в снапшот схемы пользователя не попадает,
+        // хотя во FROM встречается чаще многих таблиц.
+        if (dialect == DbKind.Oracle && HumpsMatcher.MatchRank(wordPrefix, "DUAL") is { } dualRank)
+        {
+            seen.Add(".DUAL");
+            items.Add(new CompletionItem
+            {
+                Label = "DUAL",
+                Kind = "table",
+                InsertText = "DUAL",
+                Detail = "SYS",
+                Documentation = "Служебная таблица из одной строки",
+                SortPriority = Priority.ContextTable + dualRank,
+            });
+        }
+
         // CTE текущего запроса — «виртуальные таблицы» с наивысшим табличным приоритетом.
         foreach (var s in scope.SelfAndParents())
         {
@@ -245,9 +346,11 @@ internal sealed class SemanticCompleter
             if (!seen.Add((schema ?? "") + "." + name))
                 return;
             var related = IsFkRelated(name, schema, fks, used);
+            var priority = related ? Priority.FkRelatedTable : Priority.ContextTable;
+            if (_recent.IsRecent(request.DataSourceId, name))
+                priority -= RecentObjects.Boost;
             AddTableItem(items, name, schema, type, comment, wordPrefix,
-                related ? Priority.FkRelatedTable : Priority.ContextTable,
-                autoAlias ? () => MakeAlias(name, takenAliases) : null, dialect);
+                priority, autoAlias ? () => MakeAlias(name, takenAliases) : null, dialect);
         }
 
         foreach (var snap in snapshots)
@@ -450,6 +553,71 @@ internal sealed class SemanticCompleter
                 foreach (var c in t.Columns)
                     AddColumnItem(items, c, t.Name, wordPrefix, Priority.OtherColumn, dialect);
             }
+        }
+    }
+
+    // ================================================================== Функции и процедуры
+
+    /// <summary>
+    /// Функции и процедуры закэшированных схем. Перегрузки (одно имя, разные аргументы)
+    /// сворачиваются в один элемент: в списке подсказок десяток одинаковых меток бесполезен,
+    /// а сигнатура первой из них уже показывает, как вызов выглядит.
+    /// </summary>
+    private static void AddRoutines(
+        List<CompletionItem> items, List<SchemaSnapshot> snapshots, string wordPrefix, DbKind dialect)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var snapshot in snapshots)
+        {
+            foreach (var routine in snapshot.Routines)
+            {
+                var rank = HumpsMatcher.MatchRank(wordPrefix, routine.Name);
+                if (rank is null)
+                    continue;
+                if (!seen.Add(routine.Schema + "." + routine.Name))
+                    continue;
+                items.Add(CompletionEngine.RoutineItem(routine, Priority.Routine + rank.Value, dialect));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Встроенные средства диалекта: функции, константы и псевдоколонки (SYSDATE, ROWNUM,
+    /// current_date). Каталог БД их не отдаёт, поэтому они идут из статического справочника.
+    /// </summary>
+    private static void AddBuiltins(List<CompletionItem> items, DbKind dialect, string wordPrefix)
+    {
+        foreach (var entry in DialectVocabulary.Functions(dialect))
+        {
+            if (HumpsMatcher.MatchRank(wordPrefix, entry.Name) is { } rank)
+                items.Add(CompletionEngine.BuiltinItem(entry, Priority.Builtin + rank));
+        }
+        foreach (var entry in DialectVocabulary.Constants(dialect))
+        {
+            if (HumpsMatcher.MatchRank(wordPrefix, entry.Name) is { } rank)
+                items.Add(CompletionEngine.BuiltinItem(entry, Priority.Builtin + rank));
+        }
+    }
+
+    /// <summary>Значения, осмысленные в списке VALUES.</summary>
+    private static void AddValueKeywords(List<CompletionItem> items, string wordPrefix)
+    {
+        foreach (var (word, hint) in new[]
+                 {
+                     ("DEFAULT", "значение по умолчанию для колонки"),
+                     ("NULL", "пустое значение"),
+                 })
+        {
+            if (wordPrefix.Length > 0 && !word.StartsWith(wordPrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+            items.Add(new CompletionItem
+            {
+                Label = word,
+                Kind = "keyword",
+                InsertText = word,
+                Detail = hint,
+                SortPriority = Priority.ScopeColumn,
+            });
         }
     }
 
