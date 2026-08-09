@@ -20,4 +20,8 @@ public interface ISemanticCompletionEngine : Core.ICompletionEngine
 {
     Task<IReadOnlyList<Core.CompletionItem>> CompleteAsync(
         Core.CompletionRequest request, Core.DbKind dialect, CompletionOptions? options, CancellationToken ct);
+
+    /// <summary>Сигнатура функции, внутри скобок которой стоит каретка; null — вызова там нет.</summary>
+    Task<SignatureInfo?> DescribeSignatureAsync(
+        Core.CompletionRequest request, Core.DbKind dialect, CancellationToken ct);
 }

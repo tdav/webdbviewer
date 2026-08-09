@@ -1,3 +1,4 @@
+using WebDbViewer.Completion;
 using WebDbViewer.Core;
 
 namespace WebDbViewer.Web.Api;
@@ -24,6 +25,7 @@ public static class CompletionEndpoints
     public static IEndpointRouteBuilder MapCompletionApi(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/completion", CompleteAsync).RequireAuthorization();
+        app.MapPost("/api/completion/signature", SignatureAsync).RequireAuthorization();
         app.MapPost("/api/completion/warmup", WarmupAsync).RequireAuthorization();
         return app;
     }
@@ -62,6 +64,34 @@ public static class CompletionEndpoints
         }, config.Kind, ct);
 
         return Results.Json(items);
+    }
+
+    /// <summary>
+    /// Сигнатура функции, внутри скобок которой стоит каретка. Пустой ответ (204) —
+    /// каретка не в вызове либо функция неизвестна; редактор просто не показывает подсказку.
+    /// </summary>
+    private static async Task<IResult> SignatureAsync(
+        CompletionApiRequest request,
+        IDataSourceStore dataSourceStore,
+        ISemanticCompletionEngine engine,
+        CancellationToken ct)
+    {
+        if (request.DsId == Guid.Empty || request.Sql is null)
+            return Results.BadRequest(new { error = "Не задан датасорс или текст запроса." });
+
+        var config = await dataSourceStore.GetAsync(request.DsId, ct);
+        if (config is null)
+            return Results.NotFound(new { error = "Датасорс не найден." });
+
+        var signature = await engine.DescribeSignatureAsync(new CompletionRequest
+        {
+            DataSourceId = request.DsId,
+            SqlText = request.Sql,
+            CaretOffset = request.CaretOffset,
+            DefaultSchema = DefaultSchemaFor(config, request.DefaultSchema),
+        }, config.Kind, ct);
+
+        return signature is null ? Results.NoContent() : Results.Json(signature);
     }
 
     /// <summary>

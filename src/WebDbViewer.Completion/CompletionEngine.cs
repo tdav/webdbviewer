@@ -35,6 +35,7 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
 
     private readonly IMetadataCache _metadata;
     private readonly SemanticCompleter _semantic;
+    private readonly RecentObjects _recent = new();
     private readonly object _cacheLock = new();
 
     // Кэш последнего результата: (хэш sql, каретка, диалект, датасорс, схема, опции) → items.
@@ -43,7 +44,7 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
     public CompletionEngine(IMetadataCache metadata)
     {
         _metadata = metadata;
-        _semantic = new SemanticCompleter(metadata);
+        _semantic = new SemanticCompleter(metadata, _recent);
     }
 
     public Task<IReadOnlyList<CompletionItem>> CompleteAsync(
@@ -66,6 +67,10 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
             if (_lastResult is { } last && last.Key == cacheKey)
                 return last.Items;
         }
+
+        // Таблицы из текста запоминаются как «недавние»: в схеме из сотен таблиц это
+        // единственный дешёвый признак того, с чем пользователь работает сейчас.
+        _recent.Touch(request.DataSourceId, BuildAliasMap(sql).Values);
 
         // ---------- 1. Грамматический анализ префикса (antlr4-c3); ошибки не фатальны.
         GrammarCandidates grammar;
@@ -159,6 +164,31 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
             _lastResult = (cacheKey, result);
         }
         return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<SignatureInfo?> DescribeSignatureAsync(
+        CompletionRequest request, DbKind dialect, CancellationToken ct)
+    {
+        var sql = request.SqlText ?? string.Empty;
+        var snapshots = new List<SchemaSnapshot>();
+
+        if (await TryGetSchemaSnapshotAsync(request, dialect, ct) is { } primary)
+            snapshots.Add(primary);
+        try
+        {
+            foreach (var snapshot in await _metadata.GetLoadedSchemasAsync(request.DataSourceId, ct))
+            {
+                if (!snapshots.Any(s => string.Equals(s.SchemaName, snapshot.SchemaName, StringComparison.OrdinalIgnoreCase)))
+                    snapshots.Add(snapshot);
+            }
+        }
+        catch
+        {
+            // Кэш недоступен — остаются встроенные функции диалекта.
+        }
+
+        return SignatureHelp.Describe(sql, request.CaretOffset, dialect, snapshots);
     }
 
     // ================================================================== Метаданные
@@ -316,6 +346,30 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
             SortPriority = priority,
         };
     }
+
+    /// <summary>
+    /// Элемент встроенного средства диалекта. Функция вставляется с открывающей скобкой,
+    /// константа (SYSDATE, ROWNUM, current_date) — без неё.
+    /// </summary>
+    internal static CompletionItem BuiltinItem(BuiltinEntry entry, int priority) => new()
+    {
+        Label = entry.Name,
+        Kind = entry.Signature is null ? "constant" : "function",
+        InsertText = entry.Signature is null ? entry.Name : entry.Name + "(",
+        Detail = entry.Signature ?? entry.Summary,
+        Documentation = entry.Signature is null ? null : entry.Summary,
+        SortPriority = priority,
+    };
+
+    /// <summary>Элемент типа данных: в позиции типа вставляется как есть, без квотирования.</summary>
+    internal static CompletionItem DataTypeItem(string type, int priority) => new()
+    {
+        Label = type,
+        Kind = "type",
+        InsertText = type,
+        Detail = "тип данных",
+        SortPriority = priority,
+    };
 
     private static TableInfo? FindTable(SchemaSnapshot snapshot, string name)
     {

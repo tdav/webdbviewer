@@ -7,8 +7,8 @@
 // Горячие клавиши: Ctrl+Enter — statement под курсором, Alt+X — весь скрипт.
 // Кнопки тулбара: [data-action="run"|"run-script"|"cancel"] — обрабатываются здесь же
 // (делегирование на document, поэтому переживают HTMX-свопы).
-import { EditorView, keymap } from '@codemirror/view';
-import { EditorState, Compartment, Prec } from '@codemirror/state';
+import { EditorView, keymap, showTooltip } from '@codemirror/view';
+import { EditorState, Compartment, Prec, StateField, StateEffect } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
 import { sql, PostgreSQL, PLSQL } from '@codemirror/lang-sql';
 import { autocompletion } from '@codemirror/autocomplete';
@@ -49,6 +49,10 @@ const editorThemeSpec = {
     color: 'var(--text)',
   },
   '.cm-selectionMatch': { backgroundColor: 'var(--accent-soft)' },
+  // Подсказка параметров функции: та же плашка, что у автодополнения (.cm-tooltip выше).
+  '.cm-signature-help': { padding: '4px 8px', maxWidth: '48ch' },
+  '.cm-signature-label': { fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap' },
+  '.cm-signature-doc': { marginTop: '2px', color: 'var(--text-muted)', fontSize: '0.9em' },
 };
 
 const darkTheme = EditorView.theme(editorThemeSpec, { dark: true });
@@ -90,6 +94,8 @@ const KIND_MAP = {
   column: 'property',
   schema: 'namespace',
   function: 'function',
+  constant: 'constant',
+  type: 'type',
   alias: 'variable',
   snippet: 'text',
 };
@@ -174,6 +180,113 @@ function makeCompletionSource(textarea) {
       }, COMPLETION_DEBOUNCE_MS);
     });
   };
+}
+
+// --- Подсказка параметров функции (signature help) ---
+// Показывается, пока каретка внутри скобок известного вызова. Что именно известно,
+// решает сервер: у него и кэш метаданных схемы, и справочник встроенных функций.
+const SIGNATURE_DEBOUNCE_MS = 150;
+const SIGNATURE_LOOKBEHIND = 2000; // дальше этого назад вызов искать бессмысленно
+
+const setSignature = StateEffect.define();
+
+const signatureField = StateField.define({
+  create: () => null,
+  update(value, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setSignature)) return e.value;
+    }
+    // До прихода свежего ответа держим подсказку на месте, двигая позицию с текстом.
+    if (value && tr.docChanged) return { ...value, pos: tr.changes.mapPos(value.pos) };
+    return value;
+  },
+  provide: (f) => showTooltip.from(f, (v) => (v ? {
+    pos: v.pos,
+    above: true,
+    create: () => {
+      const dom = document.createElement('div');
+      dom.className = 'cm-signature-help';
+      const label = document.createElement('div');
+      label.className = 'cm-signature-label';
+      label.textContent = v.label;
+      dom.appendChild(label);
+      if (v.documentation) {
+        const doc = document.createElement('div');
+        doc.className = 'cm-signature-doc';
+        doc.textContent = v.documentation;
+        dom.appendChild(doc);
+      }
+      return { dom };
+    },
+  } : null)),
+});
+
+/// Смещение открывающей скобки вызова, внутри которого стоит конец текста, иначе -1.
+/// Дублирует серверный разбор намеренно: он отсекает запросы там, где вызова заведомо нет.
+function openParenBefore(text) {
+  let depth = 0;
+  for (let i = text.length - 1; i >= 0; i--) {
+    const c = text[i];
+    if (c === ';') return -1; // граница statement — дальше не смотрим
+    if (c === ')') depth++;
+    else if (c === '(') {
+      if (depth === 0) return i;
+      depth--;
+    }
+  }
+  return -1;
+}
+
+function makeSignatureListener(textarea) {
+  let timer = null;
+  let controller = null;
+
+  function clear(view) {
+    if (view.state.field(signatureField, false)) {
+      // dispatch во время обновления запрещён — выходим из текущего цикла.
+      setTimeout(() => view.dispatch({ effects: setSignature.of(null) }), 0);
+    }
+  }
+
+  return EditorView.updateListener.of((update) => {
+    if (!update.docChanged && !update.selectionSet) return;
+    const view = update.view;
+    const pos = view.state.selection.main.head;
+    const before = view.state.doc.sliceString(Math.max(0, pos - SIGNATURE_LOOKBEHIND), pos);
+    const open = openParenBefore(before);
+    // Скобка без имени слева — группировка выражения, а не вызов.
+    const isCall = open >= 0 && /[\w"$#]\s*$/.test(before.slice(0, open));
+
+    if (timer) clearTimeout(timer);
+    if (!isCall || !textarea.dataset.dsId || !isPrimaryDatabaseSelected()) {
+      clear(view);
+      return;
+    }
+
+    timer = setTimeout(async () => {
+      if (controller) controller.abort();
+      controller = new AbortController();
+      try {
+        const res = await fetch('/api/completion/signature', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dsId: textarea.dataset.dsId,
+            sql: view.state.doc.toString(),
+            caretOffset: pos,
+            defaultSchema: currentSchema(),
+          }),
+          signal: controller.signal,
+        });
+        // 204 — каретка не в известном вызове.
+        if (res.status !== 200) { clear(view); return; }
+        const data = await res.json();
+        view.dispatch({ effects: setSignature.of({ pos, label: data.label, documentation: data.documentation }) });
+      } catch (e) {
+        // AbortError и сетевые ошибки — просто без подсказки.
+      }
+    }, SIGNATURE_DEBOUNCE_MS);
+  });
 }
 
 // --- Прогрев кэша метаданных ---
@@ -300,6 +413,8 @@ function initEditor(textarea) {
       syntaxHighlighting(sqlHighlight),
       dialectCompartment.of(dialectExt),
       autocompletion({ override: [makeCompletionSource(textarea)] }),
+      signatureField,
+      makeSignatureListener(textarea),
       themeCompartment.of(currentThemeExt()),
       Prec.highest(keymap.of([
         { key: 'Ctrl-Enter', mac: 'Cmd-Enter', run: runStatement, preventDefault: true },
