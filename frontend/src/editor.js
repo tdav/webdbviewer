@@ -7,8 +7,8 @@
 // Горячие клавиши: Ctrl+Enter — statement под курсором, Alt+X — весь скрипт.
 // Кнопки тулбара: [data-action="run"|"run-script"|"cancel"] — обрабатываются здесь же
 // (делегирование на document, поэтому переживают HTMX-свопы).
-import { EditorView, keymap } from '@codemirror/view';
-import { EditorState, Compartment, Prec } from '@codemirror/state';
+import { EditorView, keymap, showTooltip } from '@codemirror/view';
+import { EditorState, Compartment, Prec, StateField, StateEffect } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
 import { sql, PostgreSQL, PLSQL } from '@codemirror/lang-sql';
 import { autocompletion } from '@codemirror/autocomplete';
@@ -49,6 +49,10 @@ const editorThemeSpec = {
     color: 'var(--text)',
   },
   '.cm-selectionMatch': { backgroundColor: 'var(--accent-soft)' },
+  // Подсказка параметров функции: та же плашка, что у автодополнения (.cm-tooltip выше).
+  '.cm-signature-help': { padding: '4px 8px', maxWidth: '48ch' },
+  '.cm-signature-label': { fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap' },
+  '.cm-signature-doc': { marginTop: '2px', color: 'var(--text-muted)', fontSize: '0.9em' },
 };
 
 const darkTheme = EditorView.theme(editorThemeSpec, { dark: true });
@@ -90,6 +94,8 @@ const KIND_MAP = {
   column: 'property',
   schema: 'namespace',
   function: 'function',
+  constant: 'constant',
+  type: 'type',
   alias: 'variable',
   snippet: 'text',
 };
@@ -97,6 +103,50 @@ const KIND_MAP = {
 function makeCompletionSource(textarea) {
   let timer = null;
   let controller = null;
+  let pendingResolve = null;
+
+  // Отложенный запрос вытеснен более свежим. Его промис обязан завершиться:
+  // брошенный неразрешённым, он заставляет CodeMirror ждать вечно.
+  function dropPending() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (pendingResolve) { pendingResolve(null); pendingResolve = null; }
+  }
+
+  async function fetchCompletions(context, word) {
+    if (controller) controller.abort(); // отмена устаревшего запроса
+    controller = new AbortController();
+    try {
+      const res = await fetch('/api/completion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dsId: textarea.dataset.dsId,
+          sql: context.state.doc.toString(),
+          caretOffset: context.pos,
+          defaultSchema: currentSchema(),
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const items = Array.isArray(data) ? data : (data.items || []);
+      return {
+        from: word && word.from !== word.to ? word.from : context.pos,
+        options: items.map((it) => ({
+          label: it.label,
+          type: KIND_MAP[it.kind] || 'text',
+          apply: it.insertText || undefined,
+          detail: it.detail || undefined,
+          info: it.documentation || undefined,
+          boost: -(it.sortPriority || 0), // меньший SortPriority — выше в списке
+        })),
+        // Точка не входит в validFor: новый квалификатор — новый контекст, нужен перезапрос.
+        validFor: /^[\w"$]*$/,
+      };
+    } catch (e) {
+      return null; // AbortError и сетевые ошибки — просто без подсказок
+    }
+  }
 
   return (context) => {
     // chain — вся цепочка с квалификаторами («schema.», «alias.tbl.»): по ней решаем,
@@ -107,51 +157,153 @@ function makeCompletionSource(textarea) {
     const chain = context.matchBefore(/[\w"$.]*/);
     const word = context.matchBefore(/[\w"$]*/);
     if (!context.explicit && (!chain || chain.from === chain.to)) return null;
-    const dsId = textarea.dataset.dsId;
-    if (!dsId) return null;
+    if (!textarea.dataset.dsId) return null;
     // Кэш метаданных строится только для базы из настроек подключения: в чужой базе
     // подсказки объектов были бы из другой БД — не предлагаем их вовсе.
     if (!isPrimaryDatabaseSelected()) return null;
 
+    // Ctrl+Space: пользователь ждёт список сейчас, а не через четверть секунды.
+    // Debounce существует, чтобы не слать запрос на каждую букву, — к явному вызову
+    // это не относится.
+    if (context.explicit) {
+      dropPending();
+      return fetchCompletions(context, word);
+    }
+
     return new Promise((resolve) => {
-      if (timer) clearTimeout(timer);
+      dropPending();
+      pendingResolve = resolve;
       timer = setTimeout(async () => {
-        if (controller) controller.abort(); // отмена устаревшего запроса
-        controller = new AbortController();
-        try {
-          const res = await fetch('/api/completion', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              dsId,
-              sql: context.state.doc.toString(),
-              caretOffset: context.pos,
-              defaultSchema: currentSchema(),
-            }),
-            signal: controller.signal,
-          });
-          if (!res.ok) { resolve(null); return; }
-          const data = await res.json();
-          const items = Array.isArray(data) ? data : (data.items || []);
-          resolve({
-            from: word && word.from !== word.to ? word.from : context.pos,
-            options: items.map((it) => ({
-              label: it.label,
-              type: KIND_MAP[it.kind] || 'text',
-              apply: it.insertText || undefined,
-              detail: it.detail || undefined,
-              info: it.documentation || undefined,
-              boost: -(it.sortPriority || 0), // меньший SortPriority — выше в списке
-            })),
-            // Точка не входит в validFor: новый квалификатор — новый контекст, нужен перезапрос.
-            validFor: /^[\w"$]*$/,
-          });
-        } catch (e) {
-          resolve(null); // AbortError и сетевые ошибки — просто без подсказок
-        }
+        timer = null;
+        pendingResolve = null;
+        resolve(await fetchCompletions(context, word));
       }, COMPLETION_DEBOUNCE_MS);
     });
   };
+}
+
+// --- Подсказка параметров функции (signature help) ---
+// Показывается, пока каретка внутри скобок известного вызова. Что именно известно,
+// решает сервер: у него и кэш метаданных схемы, и справочник встроенных функций.
+const SIGNATURE_DEBOUNCE_MS = 150;
+const SIGNATURE_LOOKBEHIND = 2000; // дальше этого назад вызов искать бессмысленно
+
+const setSignature = StateEffect.define();
+
+const signatureField = StateField.define({
+  create: () => null,
+  update(value, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setSignature)) return e.value;
+    }
+    // До прихода свежего ответа держим подсказку на месте, двигая позицию с текстом.
+    if (value && tr.docChanged) return { ...value, pos: tr.changes.mapPos(value.pos) };
+    return value;
+  },
+  provide: (f) => showTooltip.from(f, (v) => (v ? {
+    pos: v.pos,
+    above: true,
+    create: () => {
+      const dom = document.createElement('div');
+      dom.className = 'cm-signature-help';
+      const label = document.createElement('div');
+      label.className = 'cm-signature-label';
+      label.textContent = v.label;
+      dom.appendChild(label);
+      if (v.documentation) {
+        const doc = document.createElement('div');
+        doc.className = 'cm-signature-doc';
+        doc.textContent = v.documentation;
+        dom.appendChild(doc);
+      }
+      return { dom };
+    },
+  } : null)),
+});
+
+/// Смещение открывающей скобки вызова, внутри которого стоит конец текста, иначе -1.
+/// Дублирует серверный разбор намеренно: он отсекает запросы там, где вызова заведомо нет.
+function openParenBefore(text) {
+  let depth = 0;
+  for (let i = text.length - 1; i >= 0; i--) {
+    const c = text[i];
+    if (c === ';') return -1; // граница statement — дальше не смотрим
+    if (c === ')') depth++;
+    else if (c === '(') {
+      if (depth === 0) return i;
+      depth--;
+    }
+  }
+  return -1;
+}
+
+function makeSignatureListener(textarea) {
+  let timer = null;
+  let controller = null;
+
+  function clear(view) {
+    if (view.state.field(signatureField, false)) {
+      // dispatch во время обновления запрещён — выходим из текущего цикла.
+      setTimeout(() => view.dispatch({ effects: setSignature.of(null) }), 0);
+    }
+  }
+
+  return EditorView.updateListener.of((update) => {
+    if (!update.docChanged && !update.selectionSet) return;
+    const view = update.view;
+    const pos = view.state.selection.main.head;
+    const before = view.state.doc.sliceString(Math.max(0, pos - SIGNATURE_LOOKBEHIND), pos);
+    const open = openParenBefore(before);
+    // Скобка без имени слева — группировка выражения, а не вызов.
+    const isCall = open >= 0 && /[\w"$#]\s*$/.test(before.slice(0, open));
+
+    if (timer) clearTimeout(timer);
+    if (!isCall || !textarea.dataset.dsId || !isPrimaryDatabaseSelected()) {
+      clear(view);
+      return;
+    }
+
+    timer = setTimeout(async () => {
+      if (controller) controller.abort();
+      controller = new AbortController();
+      try {
+        const res = await fetch('/api/completion/signature', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dsId: textarea.dataset.dsId,
+            sql: view.state.doc.toString(),
+            caretOffset: pos,
+            defaultSchema: currentSchema(),
+          }),
+          signal: controller.signal,
+        });
+        // 204 — каретка не в известном вызове.
+        if (res.status !== 200) { clear(view); return; }
+        const data = await res.json();
+        view.dispatch({ effects: setSignature.of({ pos, label: data.label, documentation: data.documentation }) });
+      } catch (e) {
+        // AbortError и сетевые ошибки — просто без подсказки.
+      }
+    }, SIGNATURE_DEBOUNCE_MS);
+  });
+}
+
+// --- Прогрев кэша метаданных ---
+// Интроспекция схемы занимает секунды. Без прогрева её ждёт первый же Ctrl+Space,
+// поэтому запускаем её при открытии редактора и при смене датасорса или схемы.
+let lastWarmup = null;
+
+function warmupCompletion(dsId, schema) {
+  if (!dsId) return;
+  const key = dsId + '/' + (schema || '');
+  if (key === lastWarmup) return; // повторный прогрев той же схемы не нужен
+  lastWarmup = key;
+  fetch('/api/completion/warmup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dsId, schema }),
+  }).catch(() => { /* прогрев необязателен: подсказки просто придут медленнее */ });
 }
 
 // --- Текущая схема из тулбара (используется автодополнением) ---
@@ -261,6 +413,8 @@ function initEditor(textarea) {
       syntaxHighlighting(sqlHighlight),
       dialectCompartment.of(dialectExt),
       autocompletion({ override: [makeCompletionSource(textarea)] }),
+      signatureField,
+      makeSignatureListener(textarea),
       themeCompartment.of(currentThemeExt()),
       Prec.highest(keymap.of([
         { key: 'Ctrl-Enter', mac: 'Cmd-Enter', run: runStatement, preventDefault: true },
@@ -277,6 +431,8 @@ function initEditor(textarea) {
   const view = new EditorView({ state, parent: wrapper });
   textarea.style.display = 'none';
   views.push({ view, textarea });
+
+  warmupCompletion(textarea.dataset.dsId, currentSchema());
 
   // Перед submit формы — синхронизация значения в скрытый textarea.
   const form = textarea.closest('form');
@@ -359,7 +515,16 @@ document.addEventListener('webdb:query-finished', () => setRunningState(false));
 // сессия предыдущего датасорса больше не годится, диалект может измениться.
 document.addEventListener('change', (e) => {
   const select = e.target;
-  if (!select || select.dataset === undefined || select.dataset.role !== 'datasource-select') return;
+  if (!select || select.dataset === undefined) return;
+
+  // Смена схемы — тот же датасорс, но подсказки пойдут по другому набору объектов.
+  if (select.dataset.role === 'schema-select') {
+    const editor = activeEditor();
+    if (editor) warmupCompletion(editor.textarea.dataset.dsId, select.value || null);
+    return;
+  }
+
+  if (select.dataset.role !== 'datasource-select') return;
   const kind = select.selectedOptions[0] ? select.selectedOptions[0].dataset.kind : null;
   const ext = dialectExtension(kind);
   for (const { view, textarea } of views) {
@@ -368,6 +533,7 @@ document.addEventListener('change', (e) => {
     delete textarea.dataset.sessionId;
     view.dispatch({ effects: dialectCompartment.reconfigure(ext) });
   }
+  warmupCompletion(select.value || '', currentSchema());
 });
 
 // Инициализация: при загрузке страницы и после HTMX-свопов.

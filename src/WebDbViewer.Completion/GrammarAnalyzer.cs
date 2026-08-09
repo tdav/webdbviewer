@@ -1,6 +1,7 @@
 using Antlr4.Runtime;
 using Antlr4CodeCompletion.Core.CodeCompletion;
 using WebDbViewer.Core;
+using WebDbViewer.Parsing;
 using WebDbViewer.Parsing.PlSql;
 using WebDbViewer.Parsing.Postgres;
 
@@ -42,9 +43,114 @@ internal static class GrammarAnalyzer
     private static readonly Lazy<HashSet<int>> PgIgnoredTokens = new(BuildPgIgnoredTokens);
     private static readonly Lazy<HashSet<int>> PlSqlIgnoredTokens = new(BuildPlSqlIgnoredTokens);
 
-    /// <summary>Анализирует префикс SQL до каретки. Исключения глотать не должен — ловит вызывающий.</summary>
-    public static GrammarCandidates Analyze(string sqlPrefix, DbKind dialect) =>
-        dialect == DbKind.Oracle ? AnalyzePlSql(sqlPrefix) : AnalyzePostgres(sqlPrefix);
+    // Полные словари ключевых слов диалектов из Vocabulary парсера — строятся один раз на процесс.
+    // Нужны как источник подсказок, когда antlr4-c3 не дал ни одного кандидата.
+    private static readonly Lazy<IReadOnlySet<string>> PgKeywords = new(
+        () => BuildVocabularyKeywords(PostgreSQLParser.DefaultVocabulary, PgIgnoredTokens.Value));
+
+    private static readonly Lazy<IReadOnlySet<string>> PlSqlKeywords = new(
+        () => BuildVocabularyKeywords(PlSqlParser.DefaultVocabulary, PlSqlIgnoredTokens.Value));
+
+    private static readonly StatementSplitter Splitter = new();
+
+    // Кэш результатов antlr4-c3: ключ (диалект, текст statement'а до каретки) → кандидаты.
+    // Результат зависит только от ключа, поэтому кэш общий для процесса.
+    // ponytail: при переполнении словарь чистится целиком, а не вытесняет LRU-хвост —
+    // прогретость восстанавливается за пару нажатий; ставить LRU, если профилировщик покажет промахи.
+    private const int CacheCapacity = 256;
+    private static readonly Dictionary<(DbKind Dialect, string Prefix), GrammarCandidates> Cache = new();
+    private static readonly Lock CacheLock = new();
+
+    /// <summary>
+    /// Анализирует текст до каретки. Разбирается только statement, внутри которого стоит каретка:
+    /// стоимость перестаёт зависеть от длины скрипта, а синтаксис предыдущих запросов не влияет
+    /// на восстановление после ошибок. Исключения глотать не должен — ловит вызывающий.
+    /// </summary>
+    public static GrammarCandidates Analyze(string sql, int caret, DbKind dialect)
+    {
+        var prefix = TrimToCurrentStatement(sql, caret, dialect);
+        var key = (dialect, prefix);
+
+        lock (CacheLock)
+        {
+            if (Cache.TryGetValue(key, out var cached))
+                return cached;
+        }
+
+        var result = dialect == DbKind.Oracle ? AnalyzePlSql(prefix) : AnalyzePostgres(prefix);
+
+        lock (CacheLock)
+        {
+            if (Cache.Count >= CacheCapacity)
+                Cache.Clear();
+            Cache[key] = result;
+        }
+        return result;
+    }
+
+    /// <summary>Все ключевые слова диалекта — резерв, когда antlr4-c3 не дал кандидатов.</summary>
+    public static IReadOnlySet<string> DialectKeywords(DbKind dialect) =>
+        dialect == DbKind.Oracle ? PlSqlKeywords.Value : PgKeywords.Value;
+
+    /// <summary>
+    /// Отрезает от текста всё, что предшествует statement'у с кареткой. Если каретка стоит уже
+    /// за завершённым statement'ом (после «;» или строки с «/»), возвращается только хвост.
+    /// </summary>
+    internal static string TrimToCurrentStatement(string sql, int caret, DbKind dialect)
+    {
+        caret = Math.Clamp(caret, 0, sql.Length);
+        if (caret == 0)
+            return string.Empty;
+
+        var start = 0;
+        try
+        {
+            foreach (var statement in Splitter.Split(sql, dialect))
+            {
+                if (statement.Offset > caret)
+                    break;
+                var end = statement.Offset + statement.Text.Length;
+                if (caret <= end)
+                {
+                    start = statement.Offset;
+                    break;
+                }
+                // Каретка за концом statement'а. Сплиттер обрезает хвостовые пробелы, поэтому
+                // «за концом» ещё не значит «в следующем»: переходим только через терминатор.
+                start = HasTerminator(sql, end, caret) ? end : statement.Offset;
+            }
+        }
+        catch
+        {
+            return sql[..caret]; // сплиттер не должен ломать анализ
+        }
+
+        // За концом завершённого statement'а остаются терминаторы; «/*» — начало комментария, не терминатор.
+        while (start < caret)
+        {
+            var c = sql[start];
+            if (char.IsWhiteSpace(c) || IsTerminator(sql, start, caret))
+                start++;
+            else
+                break;
+        }
+        return sql[start..caret];
+    }
+
+    /// <summary>Разделяет ли участок [from, to) два statement'а, а не просто отступ.</summary>
+    private static bool HasTerminator(string sql, int from, int to)
+    {
+        for (var i = from; i < to; i++)
+        {
+            if (IsTerminator(sql, i, to))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>«;» либо слэш-терминатор Oracle. «/*» — начало комментария, а не терминатор.</summary>
+    private static bool IsTerminator(string sql, int index, int end) =>
+        sql[index] == ';' || (sql[index] == '/' && (index + 1 >= end || sql[index + 1] != '*'));
 
     // ================================================================== PostgreSQL
 
@@ -131,6 +237,27 @@ internal static class GrammarAnalyzer
     }
 
     // ================================================================== Общее
+
+    /// <summary>Ключевые слова из словаря парсера: всё, кроме литералов, пунктуации и идентификаторов.</summary>
+    private static IReadOnlySet<string> BuildVocabularyKeywords(IVocabulary vocabulary, HashSet<int> ignored)
+    {
+        var keywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Верхнюю границу типов токенов знает Vocabulary, а не интерфейс IVocabulary; генератор
+        // ANTLR всегда кладёт в DefaultVocabulary именно его. Если это изменится, резервный
+        // словарь останется пустым — поведение не хуже, чем до его появления.
+        if (vocabulary is not Vocabulary concrete)
+            return keywords;
+
+        for (var tokenType = 1; tokenType <= concrete.getMaxTokenType(); tokenType++)
+        {
+            if (ignored.Contains(tokenType))
+                continue;
+            var name = NormalizeKeyword(vocabulary.GetSymbolicName(tokenType));
+            if (name is not null)
+                keywords.Add(name);
+        }
+        return keywords;
+    }
 
     /// <summary>
     /// Индекс токена каретки в потоке. Префикс заканчивается ровно на каретке, поэтому:

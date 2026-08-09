@@ -4,8 +4,14 @@
     {
       "name": "webdbviewer",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "src/WebDbViewer.Web/DbViewer.App.csproj", "--launch-profile", "http"],
-      "port": 5044
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "src/WebDbViewer.Web/DbViewer.App.csproj",
+        "--urls",
+        "http://localhost:5199"
+      ],
+      "port": 5199
     }
   ]
 }

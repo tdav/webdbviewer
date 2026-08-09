@@ -12,4 +12,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Грамматический анализ и обрезка до текущего statement — internal, но проверяются напрямую:
+         через публичный CompletionEngine их поломка не отличима от исправной работы. -->
+    <InternalsVisibleTo Include="WebDbViewer.Tests.Unit" />
+  </ItemGroup>
+
 </Project>
