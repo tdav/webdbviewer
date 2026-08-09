@@ -32,7 +32,7 @@ public static class CompletionEndpoints
     /// Схема, в которой ищутся неквалифицированные имена. Для Oracle это схема пользователя
     /// подключения: имена в ALL_* хранятся в верхнем регистре, поэтому имя приводится к нему.
     /// </summary>
-    private static string? DefaultSchemaFor(DataSourceConfig config, string? requested)
+    public static string? DefaultSchemaFor(DataSourceConfig config, string? requested)
     {
         if (!string.IsNullOrWhiteSpace(requested))
             return requested;
