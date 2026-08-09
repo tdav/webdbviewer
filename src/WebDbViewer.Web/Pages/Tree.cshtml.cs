@@ -62,8 +62,7 @@ public sealed class TreeModel : PageModel
 
             if (withDatabaseLevel && segments.Count == 0)
             {
-                
-                var databases = await provider.GetDatabasesAsync(session.Connection, includeSystem: !hideSystem, ct);
+                var databases = await provider.GetDatabasesAsync(connection, includeSystem: !hideSystem, ct);
                 Nodes = ToNodes(ds, path, databases, readOnly: config.ReadOnly, kind: config.Kind);
                 return;
             }
