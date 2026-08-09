@@ -72,6 +72,22 @@ html[data-theme="dark"] {
     --shadow-overlay: 0 8px 24px rgb(0 0 0 / .45);
     --shadow-overlay-sm: 0 4px 12px rgb(0 0 0 / .35);
 
+    /* Скелет загрузки: полупрозрачные слои, а не уровни тональной шкалы.
+       Скелет ложится и на панель, и на well, и внутрь грида — тональный
+       токен, подобранный под одну поверхность, на соседней сливается с фоном. */
+    --skeleton-bg: rgb(255 255 255 / .10);
+    --skeleton-sheen: rgb(255 255 255 / .18);
+
+    /* Затемнение под overlay: модальный backdrop и блокировщик ввода. */
+    --overlay-scrim: rgb(10 10 14 / .58);
+
+    /* Линия приборной сетки на экране входа. Слабее самой тонкой границы
+       системы: это текстура поверхности, а не разделитель. */
+    --login-grid: rgb(255 255 255 / .03);
+    /* Штрих схемы на том же экране: заметно плотнее сетки, но легче текста —
+       иллюстрация не должна спорить с формой за внимание. */
+    --login-art: rgb(255 255 255 / .24);
+
     color-scheme: dark;
 }
 
@@ -119,6 +135,20 @@ html[data-theme="light"] {
     --shadow-overlay: 0 8px 24px rgb(26 26 46 / .14);
     --shadow-overlay-sm: 0 4px 12px rgb(26 26 46 / .10);
 
+    /* Плашка темнее поверхности, блик — светлее плашки: в светлой теме
+       направление «света» сохраняется, поэтому блик остаётся белым. */
+    --skeleton-bg: rgb(26 26 46 / .13);
+    --skeleton-sheen: rgb(255 255 255 / .55);
+
+    /* В светлой теме та же плотность затемнения выглядит грязной: сцена под
+       overlay светлая, и 58 % чёрного гасят её до нечитаемости. */
+    --overlay-scrim: rgb(10 10 14 / .38);
+
+    /* В светлой теме well почти сливается с панелью, поэтому сетка чуть плотнее:
+       при .03 она пропадала бы вместе с самой колонкой. */
+    --login-grid: rgb(26 26 46 / .045);
+    --login-art: rgb(26 26 46 / .26);
+
     color-scheme: light;
 }
 
@@ -144,6 +174,10 @@ html[data-theme="light"] {
     --z-dropdown: 10;
     --z-sticky: 20;
     --z-modal: 50;
+    /* Блокировщик ввода на время загрузки: выше модалок (форма в диалоге тоже
+       не должна принимать клики), но ниже тостов — сообщение об ошибке обязано
+       быть видно поверх него. */
+    --z-blocker: 55;
     --z-toast: 60;
     --z-tooltip: 70;
 
@@ -737,7 +771,31 @@ a.tree-name:hover { color: var(--accent-text); }
     font-family: var(--mono);
     padding: var(--space-sm);
 }
+/* editor.js оборачивает CodeMirror в .wdb-editor. Без высоты на обёртке
+   height:100% у .cm-editor считался от блока нулевой высоты, редактор
+   схлопывался до одной строки и рос за границу панели: прокрутки не возникало,
+   текст просто уходил под панель результатов. */
+.editor-pane .wdb-editor { height: 100%; }
 .editor-pane .cm-editor { height: 100%; }
+
+/* Полосы прокрутки редактора видимы и подчинены палитре: системные в тёмной
+   теме почти сливаются с фоном, а именно по ним видно, что текст длиннее окна. */
+.editor-pane .cm-scroller {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+}
+.editor-pane .cm-scroller::-webkit-scrollbar { width: 12px; height: 12px; }
+/* Кнопки-стрелки на концах дорожки — элемент системной темы, в остальном
+   интерфейсе такого языка нет. */
+.editor-pane .cm-scroller::-webkit-scrollbar-button { display: none; }
+.editor-pane .cm-scroller::-webkit-scrollbar-track { background: var(--bg-well); }
+.editor-pane .cm-scroller::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border: 3px solid var(--bg-well);
+    border-radius: var(--radius-pill);
+}
+.editor-pane .cm-scroller::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+.editor-pane .cm-scroller::-webkit-scrollbar-corner { background: var(--bg-well); }
 
 /* ---------- Панель результатов ---------- */
 .results-panel {
@@ -765,6 +823,13 @@ a.tree-name:hover { color: var(--accent-text); }
     color: var(--text-muted);
     font-size: 12px;
     font-family: var(--mono);
+}
+/* Статус «выполняется»: кольцо и подпись на одной базовой линии. */
+.status-running {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    --spinner-size: 11px;
 }
 
 /* ---------- Грид данных ---------- */
@@ -798,42 +863,252 @@ a.tree-name:hover { color: var(--accent-text); }
 }
 .grid-container { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
-/* ---------- Индикатор загрузки HTMX ---------- */
-.htmx-indicator { display: none; color: var(--text-muted); font-size: 12px; }
-.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }
+/* ============================================================
+   Индикаторы загрузки
 
-/* ---------- Форма логина ---------- */
+   Один визуальный язык на всё приложение: кольцо (.spinner) там, где ждём
+   короткого ответа рядом с контролом, и мерцающий скелет (.skeleton) там,
+   где ждём содержимого и уже известна его форма. Текст «Загрузка…» уходит
+   в .visually-hidden: подпись рядом с иконкой запрещена системой (см.
+   DESIGN.md, «только иконка»), но доступное имя обязано остаться.
+
+   Движение убирается в prefers-reduced-motion (блок в конце файла). Там
+   переопределяется вид, а не длительность: универсальное правило гасит
+   animation-duration через !important, и замороженный на первом кадре
+   shimmer читался бы как дефект отрисовки, а не как «идёт загрузка».
+   ============================================================ */
+
+/* Кольцо: незакрашенный сектор бежит по кругу. Цвет — currentColor,
+   поэтому кольцо наследует цвет места, куда его поставили. */
+.spinner {
+    display: inline-block;
+    flex: none;
+    width: var(--spinner-size, 14px);
+    height: var(--spinner-size, 14px);
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    opacity: .85;
+    animation: spinner-rotate .7s linear infinite;
+}
+.spinner--lg { --spinner-size: 22px; border-width: 2.5px; }
+.spinner--accent { color: var(--accent-text); }
+
+@keyframes spinner-rotate { to { transform: rotate(360deg); } }
+
+/* Скелет: подложка уровня «поверхность» с бликом, идущим слева направо.
+   Блик — отдельный псевдоэлемент, чтобы не анимировать background-position
+   (перерисовка всего блока на каждом кадре). */
+.skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--skeleton-bg);
+    border-radius: var(--radius-sm);
+}
+.skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--skeleton-sheen) 45%,
+        var(--skeleton-sheen) 55%,
+        transparent 100%);
+    animation: skeleton-sweep 1.2s ease-in-out infinite;
+}
+
+@keyframes skeleton-sweep { to { transform: translateX(100%); } }
+
+/* Скелет таблицы: шапка + строки. Ширины колонок заданы штучно —
+   равные полосы читаются как индикатор прогресса, а не как таблица. */
+.skeleton-table {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    padding: var(--space-md);
+}
+.skeleton-table .skeleton-row { display: flex; gap: var(--space-sm); }
+.skeleton-table .skeleton { height: 14px; }
+.skeleton-table .skeleton-row--head .skeleton { height: 16px; opacity: .85; }
+.skeleton-table .skeleton-row .skeleton:nth-child(1) { flex: 0 0 14%; }
+.skeleton-table .skeleton-row .skeleton:nth-child(2) { flex: 0 0 26%; }
+.skeleton-table .skeleton-row .skeleton:nth-child(3) { flex: 0 0 18%; }
+.skeleton-table .skeleton-row .skeleton:nth-child(4) { flex: 1 1 auto; }
+/* Строки гаснут к низу: список выглядит уходящим за край, а не обрезанным. */
+.skeleton-table .skeleton-row:nth-child(3) { opacity: .8; }
+.skeleton-table .skeleton-row:nth-child(4) { opacity: .6; }
+.skeleton-table .skeleton-row:nth-child(5) { opacity: .45; }
+.skeleton-table .skeleton-row:nth-child(6) { opacity: .3; }
+.skeleton-table .skeleton-row:nth-child(7) { opacity: .18; }
+
+/* Плейсхолдер результатов: текстовый вариант остаётся для «нет данных». */
+.results-placeholder { color: var(--text-muted); padding: var(--space-lg); }
+.results-placeholder--loading { padding: 0; }
+
+/* ---------- Индикатор загрузки HTMX ---------- */
+/* inline-flex, а не inline: у inline-контейнера кольцо получает нулевую
+   высоту строки и не видно ничего. */
+.htmx-indicator { display: none; color: var(--text-muted); font-size: 12px; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    vertical-align: middle;
+}
+
+/* ---------- Экран входа ---------- */
+/* Единственный экран системы, на котором нет данных, поэтому здесь допустима
+   отдельная колонка с именем продукта: она отвечает на вопрос «куда я вхожу»,
+   а не украшает. Форма лежит на панели, контекст — на well: та же тональная
+   пара «поверхность / углубление», что и в остальном приложении.
+
+   Шкала контролов здесь 40px вместо рабочих 30px. Плотность нужна там, где
+   полей десяток подряд; на экране входа их два, зато поле пароля несёт внутри
+   кнопку показа, которой в 30px не хватает места под область нажатия. */
 .login-page {
     min-height: 100vh;
+    min-height: 100dvh;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    background: var(--bg);
+}
+
+/* Обе половины центрируют содержимое по своей оси: колонка держит схему,
+   панель — форму, и на широком мониторе ни одна не превращается в пустое
+   поле с содержимым, сдвинутым в угол. */
+.login-aside {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: var(--space-2xl) clamp(var(--space-2xl), 6vw, 72px);
+    background: var(--bg-well);
+    /* Приборная сетка 24px — единственная текстура в системе. Держится ниже
+       порога различимости, чтобы половина экрана не читалась как пустая
+       заливка, и не выходит за пределы этой колонки. */
+    background-image:
+        repeating-linear-gradient(0deg, var(--login-grid) 0 1px, transparent 1px 24px),
+        repeating-linear-gradient(90deg, var(--login-grid) 0 1px, transparent 1px 24px);
+    border-right: 1px solid var(--border);
+}
+/* Ширина задаётся один раз на обёртке: знак и схема обязаны заканчиваться на
+   одной вертикали, иначе блок разъезжается по краям. Потолок в 560px не даёт
+   схеме на широком мониторе вырасти до плакатного размера. */
+.login-aside-inner {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xl);
+    width: 100%;
+    max-width: min(560px, 100%);
+}
+.login-brand { display: flex; align-items: center; gap: var(--space-sm); }
+.login-brand .ui-icon { width: 24px; height: 24px; }
+.login-brand-name { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+/* Схема хранилища: тот же штриховой язык, что у иконок интерфейса, и та же
+   логика цвета — нейтральные линии плюс одна подсвеченная строка таблицы,
+   написанная теми же токенами, что и выбранная строка настоящего грида. */
+.login-art { display: block; width: 100%; height: auto; }
+/* Точки бегут по трассам от хранилища к гриду — единственное движение экрана.
+   При prefers-reduced-motion глобальное правило замораживает анимацию, и
+   трасса остаётся обычным пунктиром: рисунок ничего не теряет. */
+.login-art-trace { stroke-dasharray: 1 9; animation: login-art-flow 1.4s linear infinite; }
+@keyframes login-art-flow {
+    to { stroke-dashoffset: -10; }
+}
+
+.login-main {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg);
-    padding: var(--space-lg);
-}
-.login-card {
-    width: 340px;
-    max-width: 100%;
+    padding: var(--space-2xl) clamp(var(--space-2xl), 6vw, 72px);
     background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-xl);
-    padding: var(--space-2xl);
 }
-.login-card h1 {
+.login-theme { position: absolute; top: var(--space-lg); right: var(--space-lg); }
+
+.login-form { width: 100%; max-width: 340px; }
+.login-title {
     margin: 0 0 var(--space-xl);
     font-size: 20px;
     font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-sm);
+    letter-spacing: -0.01em;
 }
-.login-card h1 .brand-icon { color: var(--accent); }
-.login-card input { width: 100%; }
-/* Кнопка входа иконочная, поэтому не растягивается на всю карточку:
-   пиктограмма 15px посреди 284px полосы читалась бы как промах вёрстки. */
-.login-card .btn { margin: var(--space-lg) auto 0; }
-.login-card .btn-icon { width: 44px; min-width: 44px; min-height: 36px; }
+
+/* Сообщение об ошибке приезжает вместе с разметкой, а не появляется позже,
+   поэтому вход в кадр помечает его как свежее событие, а не как часть формы. */
+.login-alert {
+    margin: 0 0 var(--space-lg);
+    animation: login-alert-in var(--motion-normal) var(--ease-out);
+}
+/* Фокус на нём ставит скрипт, а на программный фокус :focus-visible кольца не
+   даёт — правило намеренно завязано на :focus. Кольцо здесь семантического
+   цвета, а не акцентного: акцент в системе значит «тут можно действовать»,
+   а сообщение фокус получает только чтобы быть объявленным. */
+.login-alert:focus { outline: 2px solid currentColor; outline-offset: 2px; }
+@keyframes login-alert-in {
+    from { opacity: 0; transform: translateY(-4px); }
+}
+
+.login-field { margin-bottom: var(--space-lg); }
+.login-field > label { margin-bottom: var(--space-xs); }
+.login-form input[type="text"],
+.login-form input[type="password"] {
+    width: 100%;
+    min-height: 40px;
+    padding: var(--space-sm) var(--space-md);
+}
+
+.login-password { position: relative; display: flex; }
+.login-password input[type="text"],
+.login-password input[type="password"] { padding-right: 44px; }
+.login-reveal {
+    position: absolute;
+    top: 50%;
+    right: var(--space-2xs);
+    transform: translateY(-50%);
+    width: 32px;
+    min-width: 32px;
+    min-height: 32px;
+}
+.login-reveal .login-reveal-hide { display: none; }
+.login-reveal[aria-pressed="true"] .login-reveal-show { display: none; }
+.login-reveal[aria-pressed="true"] .login-reveal-hide { display: block; }
+
+.login-caps {
+    display: flex;
+    margin: var(--space-xs) 0 0;
+    color: var(--warning);
+    font-size: 12px;
+    line-height: 1.4;
+}
+.login-caps[hidden] { display: none; }
+
+.login-submit { width: 100%; min-height: 40px; margin-top: var(--space-xl); }
+/* Кнопка на время отправки помечается aria-disabled, а не disabled: снятие
+   контрола из потока прямо в обработчике submit отменило бы саму отправку. */
+.login-submit[aria-disabled="true"] { cursor: progress; }
+
+/* На узком экране колонки складываются в стопку: контекст сверху, форма под
+   ним. Тонально они не меняются местами — граница просто переезжает вниз. */
+@media (max-width: 900px) {
+    /* Колонка контекста прижимается к своему содержимому, остаток высоты
+       забирает форма: иначе grid делит свободное место поровну и над формой
+       повисает пустая половина экрана. */
+    .login-page { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .login-aside {
+        align-items: stretch;
+        padding: var(--space-xl) var(--space-lg);
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+    /* В стопке общая ось не нужна, а схема уменьшается: полноразмерная она
+       съела бы верх экрана и увела форму под сгиб. */
+    .login-aside-inner { gap: var(--space-md); max-width: 100%; }
+    .login-art { max-width: 240px; }
+    .login-main { padding: var(--space-xl) var(--space-lg); }
+    .login-theme { top: var(--space-sm); right: var(--space-sm); }
+}
 
 #toast-area {
     position: fixed;
@@ -896,7 +1171,7 @@ a.tree-name:hover { color: var(--accent-text); }
     box-shadow: var(--shadow-overlay);
     width: min(680px, calc(100vw - var(--space-xl)));
 }
-.modal::backdrop { background: rgb(10 10 14 / .58); }
+.modal::backdrop { background: var(--overlay-scrim); }
 .modal[open] { animation: modal-in 160ms var(--ease-out); }
 
 @keyframes modal-in {
@@ -1065,4 +1340,15 @@ summary:focus-visible,
         animation-iteration-count: 1 !important;
         transition-duration: .01ms !important;
     }
+
+    /* Индикаторам загрузки правила выше недостаточно: остановленное кольцо
+       выглядит как разорванная окружность, а замёрзший блик скелета — как
+       артефакт градиента. Поэтому здесь меняется вид, а не длительность. */
+    .spinner {
+        animation-name: none;
+        border-top-color: currentColor;
+        opacity: .45;
+    }
+    .skeleton::after { animation-name: none; display: none; }
+    .skeleton { background: var(--border-strong); }
 }

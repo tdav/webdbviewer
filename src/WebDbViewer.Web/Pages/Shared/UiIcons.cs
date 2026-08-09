@@ -104,6 +104,17 @@ public static class UiIcons
         Stroke("<circle cx='8' cy='8' r='3.4'/>" +
                "<path d='M8 .9v1.8M8 13.3v1.8M15.1 8h-1.8M2.7 8H.9M13.1 2.9l-1.3 1.3M4.2 11.8l-1.3 1.3M13.1 13.1l-1.3-1.3M4.2 4.2 2.9 2.9'/>");
 
+    /// <summary>Глаз — показать значение поля пароля.</summary>
+    public static readonly HtmlString Eye =
+        Stroke("<path d='M1.5 8S4.1 3.7 8 3.7 14.5 8 14.5 8 11.9 12.3 8 12.3 1.5 8 1.5 8Z'/>" +
+               "<circle cx='8' cy='8' r='2'/>");
+
+    /// <summary>Перечёркнутый глаз — снова скрыть значение поля пароля.</summary>
+    public static readonly HtmlString EyeOff =
+        Stroke("<path d='M6.4 4A6.6 6.6 0 0 1 8 3.7c3.9 0 6.5 4.3 6.5 4.3a12.4 12.4 0 0 1-2.2 2.7'/>" +
+               "<path d='M3.9 5.1A12.4 12.4 0 0 0 1.5 8s2.6 4.3 6.5 4.3a6.6 6.6 0 0 0 2.4-.4'/>" +
+               "<path d='M6.6 6.6a2 2 0 0 0 2.8 2.8'/><path d='m2.6 2.6 10.8 10.8'/>");
+
     /// <summary>Силуэт пользователя — текущая учётная запись.</summary>
     public static readonly HtmlString User =
         Stroke("<circle cx='8' cy='5.4' r='2.8'/><path d='M2.6 14c0-2.9 2.4-4.6 5.4-4.6s5.4 1.7 5.4 4.6'/>");

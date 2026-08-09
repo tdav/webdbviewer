@@ -96,7 +96,10 @@
                 hx-target="#test-connection-result"
                 hx-swap="innerHTML"
                 hx-indicator="#test-indicator">@UiIcons.Plug</button>
-        <span id="test-indicator" class="htmx-indicator">Проверяем…</span>
+        <span id="test-indicator" class="htmx-indicator" role="status">
+            <span class="spinner" aria-hidden="true"></span>
+            <span class="visually-hidden">Проверяем подключение…</span>
+        </span>
 
         <span class="footer-spacer"></span>
 

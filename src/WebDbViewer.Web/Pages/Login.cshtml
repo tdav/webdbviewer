@@ -11,7 +11,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Вход — WebDbViewer</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/css/app.css" />
+    <link rel="stylesheet" href="/css/app.css" asp-append-version="true" />
     <script>
         (function () {
             try {
@@ -22,32 +22,187 @@
     </script>
 </head>
 <body>
-    <div class="login-page">
-        <form method="post" class="login-card" autocomplete="off">
-            <h1>
-                <span class="brand-icon">@UiIcons.Brand</span>
-                WebDbViewer
-            </h1>
-            @if (Model.ErrorMessage is not null)
-            {
-                <div class="alert alert-error">@Model.ErrorMessage</div>
-            }
-            <div class="field">
-                <label for="username">Имя пользователя</label>
-                <input type="text" id="username" name="username" value="@Model.Username" required autofocus />
+    <main class="login-page">
+        @* Левая колонка отвечает на вопрос «куда я вхожу»: тот же знак и то же
+           имя, что в топбаре приложения, плюс предупреждение об аудите — его
+           лучше прочитать до входа, а не после первого запроса. *@
+        <aside class="login-aside">
+            <div class="login-aside-inner">
+                <div class="login-brand">
+                    <span class="brand-icon">@UiIcons.Brand</span>
+                    <span class="login-brand-name">WebDbViewer</span>
+                </div>
+                @* Схема живёт в разметке страницы, а не в UiIcons: там лежит
+                   набор действий 16×16, а это единственная иллюстрация системы.
+                   Декоративна, поэтому aria-hidden — смысл экрана несут
+                   заголовок формы и знак продукта над схемой. *@
+                <svg class="login-art" viewBox="0 0 400 300" fill="none" aria-hidden="true">
+                    @* Подсвеченная строка таблицы: те же токены, что у выбранной
+                       строки настоящего грида, поэтому схема читается как кадр
+                       из приложения, а не как отвлечённая картинка. *@
+                    <rect x="242" y="153" width="142" height="28" fill="var(--accent-soft)" />
+                    <g stroke="var(--login-art)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        @* База данных *@
+                        <ellipse cx="96" cy="46" rx="50" ry="17" />
+                        <path d="M46 46v78c0 9.4 22.4 17 50 17s50-7.6 50-17V46" />
+                        <path d="M46 72c0 9.4 22.4 17 50 17s50-7.6 50-17" />
+                        <path d="M46 98c0 9.4 22.4 17 50 17s50-7.6 50-17" />
+                        @* Хранилище: стойка на три отсека под базой *@
+                        <rect x="44" y="196" width="110" height="84" rx="8" />
+                        <path d="M44 224h110M44 252h110" />
+                        <path d="M104 210h36M104 238h36M104 266h36" />
+                        @* База стоит на хранилище в прямом смысле *@
+                        <path d="M96 141v55" />
+                        @* Таблица результата *@
+                        <rect x="240" y="64" width="146" height="182" rx="8" />
+                        <path d="M240 92h146M240 122h146M240 152h146M240 182h146M240 212h146" />
+                        <path d="M298 64v182" />
+                    </g>
+                    @* Трассы данных: пунктир бежит от базы и хранилища к гриду.
+                       Штрих нейтральный — движение и есть сюжет схемы. *@
+                    <g class="login-art-trace" stroke="var(--login-art)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M146 84h44v23h50" />
+                        <path d="M154 238h46v-71h40" />
+                    </g>
+                    @* Индикаторы отсеков *@
+                    <g fill="var(--login-art)">
+                        <circle cx="60" cy="210" r="2.5" /><circle cx="74" cy="210" r="2.5" />
+                        <circle cx="74" cy="238" r="2.5" />
+                        <circle cx="60" cy="266" r="2.5" /><circle cx="74" cy="266" r="2.5" />
+                    </g>
+                    <circle cx="60" cy="238" r="2.5" fill="var(--accent)" />
+                    @* Содержимое ячеек *@
+                    <g stroke="var(--login-art)" stroke-width="2" stroke-linecap="round" opacity=".5">
+                        <path d="M252 78h26M310 78h36" />
+                        <path d="M252 107h30M310 107h28" />
+                        <path d="M252 137h24M310 137h40" />
+                        <path d="M252 197h32M310 197h30" />
+                        <path d="M252 229h26M310 229h42" />
+                    </g>
+                    <g stroke="var(--accent)" stroke-width="2" stroke-linecap="round" opacity=".9">
+                        <path d="M252 167h34M310 167h38" />
+                    </g>
+                </svg>
             </div>
-            <div class="field">
-                <label for="password">Пароль</label>
-                <input type="password" id="password" name="password" required />
-            </div>
-            <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
-            <button type="submit" class="btn btn-primary btn-icon"
-                    aria-label="Войти"
-                    data-tip="Войти в систему">@UiIcons.Login</button>
-        </form>
-    </div>
-    @* app.js нужен здесь ради подсказок: без него иконочная кнопка входа
-       осталась бы без единственного видимого объяснения. *@
+        </aside>
+
+        <div class="login-main">
+            <button type="button" class="btn btn-ghost btn-icon login-theme" data-theme-toggle
+                    aria-label="Переключить тему" data-tip="Переключить тему">@UiIcons.Theme</button>
+
+            <form method="post" class="login-form" id="login-form">
+                <h1 class="login-title">Вход в систему</h1>
+
+                @if (Model.ErrorMessage is not null)
+                {
+                    <div class="alert alert-error login-alert" id="login-error" role="alert" tabindex="-1">@Model.ErrorMessage</div>
+                }
+
+                <div class="field login-field">
+                    <label for="username">Имя пользователя</label>
+                    <input type="text" id="username" name="username" value="@Model.Username"
+                           autocomplete="username" spellcheck="false" autocapitalize="off"
+                           required autofocus />
+                </div>
+
+                <div class="field login-field">
+                    <label for="password">Пароль</label>
+                    @* Кнопка показа живёт внутри поля: пароль к боевой базе набирают
+                       вслепую, и проверить набранное нужно не уходя с поля. *@
+                    <div class="login-password">
+                        <input type="password" id="password" name="password"
+                               autocomplete="current-password" required />
+                        <button type="button" class="btn btn-ghost btn-icon login-reveal" id="login-reveal"
+                                aria-controls="password" aria-pressed="false"
+                                aria-label="Показать пароль" data-tip="Показать пароль">
+                            <span class="login-reveal-show">@UiIcons.Eye</span>
+                            <span class="login-reveal-hide">@UiIcons.EyeOff</span>
+                        </button>
+                    </div>
+                    <p class="login-caps" id="login-caps" hidden>Включён Caps Lock — пароль чувствителен к регистру.</p>
+                </div>
+
+                <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+
+                <button type="submit" class="btn btn-primary login-submit" id="login-submit"
+                        data-busy-label="Проверяем…">
+                    @UiIcons.Login
+                    <span class="login-submit-label">Войти</span>
+                </button>
+            </form>
+        </div>
+    </main>
+
+    @* app.js нужен здесь ради переключателя темы и подсказок к иконочным
+       кнопкам: без него оба контрола останутся без единственного видимого
+       объяснения своего назначения. *@
     <script src="/js/app.js" asp-append-version="true"></script>
+    <script>
+        (function () {
+            var form = document.getElementById("login-form");
+            var pass = document.getElementById("password");
+            var caps = document.getElementById("login-caps");
+            var reveal = document.getElementById("login-reveal");
+            var error = document.getElementById("login-error");
+
+            // Ошибка приходит вместе с разметкой, поэтому role="alert" её не
+            // объявит: живая область реагирует на изменения, а не на исходное
+            // содержимое. Фокус переносит и объявление, и позицию каретки.
+            if (error) error.focus();
+
+            if (reveal && pass) {
+                reveal.addEventListener("click", function () {
+                    var shown = pass.type === "text";
+                    pass.type = shown ? "password" : "text";
+                    reveal.setAttribute("aria-pressed", String(!shown));
+                    var label = shown ? "Показать пароль" : "Скрыть пароль";
+                    reveal.setAttribute("aria-label", label);
+                    reveal.setAttribute("data-tip", label);
+                    pass.focus();
+                });
+            }
+
+            // Caps Lock — самая частая причина «неверного пароля», о которой
+            // сервер не может сообщить: он видит только несовпадение хэша.
+            function syncCaps(e) {
+                if (!caps || typeof e.getModifierState !== "function") return;
+                caps.hidden = !e.getModifierState("CapsLock");
+            }
+            if (pass) {
+                pass.addEventListener("keydown", syncCaps);
+                pass.addEventListener("keyup", syncCaps);
+                pass.addEventListener("blur", function () { if (caps) caps.hidden = true; });
+            }
+
+            // Двойную отправку гасит флаг, а не атрибут disabled: снятие кнопки
+            // из потока прямо в обработчике submit отменяет саму отправку.
+            var busy = false;
+            if (form) {
+                form.addEventListener("submit", function (e) {
+                    if (busy) { e.preventDefault(); return; }
+                    busy = true;
+                    var btn = document.getElementById("login-submit");
+                    if (!btn) return;
+                    btn.setAttribute("aria-disabled", "true");
+                    var label = btn.querySelector(".login-submit-label");
+                    var busyText = btn.getAttribute("data-busy-label");
+                    if (label && busyText) label.textContent = busyText;
+                });
+            }
+
+            // Возврат «назад» может отдать страницу из bfcache вместе с уже
+            // поднятым флагом: тогда кнопка навсегда осталась бы в состоянии
+            // «Проверяем…», а форма — неотправляемой.
+            window.addEventListener("pageshow", function (e) {
+                if (!e.persisted) return;
+                busy = false;
+                var btn = document.getElementById("login-submit");
+                if (!btn) return;
+                btn.removeAttribute("aria-disabled");
+                var label = btn.querySelector(".login-submit-label");
+                if (label) label.textContent = "Войти";
+            });
+        })();
+    </script>
 </body>
 </html>

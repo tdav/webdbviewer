@@ -9,7 +9,15 @@ namespace WebDbViewer.Core.Sessions;
 /// </summary>
 public sealed class DbSession : IDbSession
 {
+    /// <summary>
+    /// Сколько ждать освобождения соединения. Ожидание «сколько угодно» превращает случайную
+    /// параллельность (навигатор, вкладка данных) в зависший запрос, поэтому предел нужен.
+    /// </summary>
+    private static readonly TimeSpan AcquireTimeout = TimeSpan.FromSeconds(30);
+
     private readonly object _sync = new();
+    /// <summary>Одно физическое соединение — одна команда за раз (см. <see cref="AcquireAsync"/>).</summary>
+    private readonly SemaphoreSlim _connectionGate = new(1, 1);
     private DbTransaction? _transaction;
     private DbCommand? _currentCommand;
     private int _disposed;
@@ -101,6 +109,30 @@ public sealed class DbSession : IDbSession
     }
 
     /// <summary>
+    /// Занимает соединение под одну команду. Захват НЕ реентерабельный: внутри удерживаемого
+    /// scope нельзя брать его повторно — вложенный вызов повиснет до таймаута.
+    /// </summary>
+    public async Task<IAsyncDisposable> AcquireAsync(CancellationToken ct)
+    {
+        ThrowIfDisposed();
+        bool acquired;
+        try
+        {
+            acquired = await _connectionGate.WaitAsync(AcquireTimeout, ct).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Сессию закрыли (TTL, лимит), пока запрос стоял в очереди за соединением.
+            throw new ObjectDisposedException(nameof(DbSession), "Сессия БД была закрыта во время ожидания.");
+        }
+        if (!acquired)
+            throw new DbSessionBusyException(
+                "В сессии уже выполняется запрос. Дождитесь завершения или остановите его.");
+        Touch();
+        return new ConnectionLease(this);
+    }
+
+    /// <summary>
     /// Регистрирует команду как «текущую выполняющуюся» (для <see cref="CancelRunning"/>)
     /// и привязывает её к открытой транзакции сессии. Возвращает scope, снимающий регистрацию.
     /// </summary>
@@ -141,6 +173,29 @@ public sealed class DbSession : IDbSession
 
         try { await Connection.DisposeAsync().ConfigureAwait(false); }
         catch { }
+
+        _connectionGate.Dispose();
+    }
+
+    /// <summary>Освобождает соединение сессии для следующей команды.</summary>
+    private sealed class ConnectionLease : IAsyncDisposable
+    {
+        private readonly DbSession _session;
+        private int _released;
+
+        public ConnectionLease(DbSession session) => _session = session;
+
+        public ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _released, 1) == 0)
+            {
+                _session.Touch();
+                // Сессия могла быть закрыта, пока команда выполнялась: семафор уже освобождён вместе с ней.
+                try { _session._connectionGate.Release(); }
+                catch (ObjectDisposedException) { }
+            }
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class CommandScope : IDisposable

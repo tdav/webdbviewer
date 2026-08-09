@@ -65,8 +65,53 @@ const GRID_CSS = `
    превращает область в сетку коробок вместо одного выделенного блока. */
 .wdb-grid-cell.selected{background:var(--wdb-sel)}
 .wdb-null{color:var(--wdb-null);font-style:italic}
-.wdb-grid-status{flex:none;padding:3px 8px;font-size:12px;border-top:1px solid var(--wdb-border);background:var(--wdb-head);color:var(--wdb-null);display:flex;gap:12px}
+.wdb-grid-status{position:relative;flex:none;padding:3px 8px;font-size:12px;border-top:1px solid var(--wdb-border);background:var(--wdb-head);color:var(--wdb-null);display:flex;gap:12px;overflow:hidden}
 .wdb-grid-status .error{color:var(--danger,#dc2626)}
+/* Подгрузка следующей keyset-страницы: бегунок по верхней кромке статусбара.
+   Скелет здесь не годится — строки уже есть, ждём только продолжения. */
+.wdb-grid-status.loading::after{
+  content:"";position:absolute;top:0;left:0;height:2px;width:30%;
+  background:var(--accent,#ff6b2c);animation:wdb-grid-slide 1s linear infinite
+}
+@keyframes wdb-grid-slide{0%{transform:translateX(-100%)}100%{transform:translateX(400%)}}
+
+/* Ожидание первой страницы (или результата запроса): скелет поверх пустого
+   тела грида. Шапка ещё не известна, поэтому первая полоса шире остальных. */
+/* Скелет перехватывает ввод: пока строк нет, клик по телу грида пришёлся бы
+   по данным предыдущей выборки. Тулбар и кнопка остановки остаются доступны —
+   блокируется область грида, а не экран. */
+.wdb-grid-loading{position:absolute;inset:0;z-index:1;background:var(--wdb-bg);padding:8px;cursor:progress}
+.wdb-grid-loading[hidden]{display:none}
+.wdb-grid-skrows{display:flex;flex-direction:column;gap:6px}
+.wdb-grid-skrow{display:flex;gap:10px}
+/* Плашка и блик — полупрозрачные слои (токены app.css): тональный уровень,
+   подобранный под панель, внутри грида на своём фоне сливался бы с ним. */
+.wdb-sk{position:relative;overflow:hidden;height:14px;border-radius:4px;background:var(--skeleton-bg,rgba(255,255,255,.10))}
+.wdb-sk::after{
+  content:"";position:absolute;inset:0;transform:translateX(-100%);
+  background:linear-gradient(90deg,transparent 0%,var(--skeleton-sheen,rgba(255,255,255,.18)) 45%,var(--skeleton-sheen,rgba(255,255,255,.18)) 55%,transparent 100%);
+  animation:wdb-sk-sweep 1.2s ease-in-out infinite
+}
+@keyframes wdb-sk-sweep{to{transform:translateX(100%)}}
+.wdb-grid-skrow .wdb-sk:nth-child(1){flex:0 0 14%}
+.wdb-grid-skrow .wdb-sk:nth-child(2){flex:0 0 26%}
+.wdb-grid-skrow .wdb-sk:nth-child(3){flex:0 0 18%}
+.wdb-grid-skrow .wdb-sk:nth-child(4){flex:1 1 auto}
+.wdb-grid-skrow:first-child .wdb-sk{height:16px}
+.wdb-grid-skrow:nth-child(3){opacity:.8}
+.wdb-grid-skrow:nth-child(4){opacity:.6}
+.wdb-grid-skrow:nth-child(5){opacity:.45}
+.wdb-grid-skrow:nth-child(6){opacity:.3}
+.wdb-grid-skrow:nth-child(7){opacity:.18}
+/* Статус загрузки для скринридера: визуально его несёт скелет. */
+.wdb-sr{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media (prefers-reduced-motion: reduce){
+  /* Замерший бегунок и замерший блик читаются как дефект отрисовки,
+     поэтому здесь меняется вид, а не длительность. */
+  .wdb-grid-status.loading::after{animation:none;width:100%;opacity:.6}
+  .wdb-sk::after{animation:none;display:none}
+  .wdb-sk{background:var(--border-strong,rgba(255,255,255,.16))}
+}
 .wdb-grid-cell.dirty{background:var(--wdb-dirty);font-weight:600}
 .wdb-grid-row.deleted{background:var(--wdb-del);text-decoration:line-through;opacity:.6}
 .wdb-grid-row.newrow{background:var(--wdb-new)}
@@ -90,6 +135,36 @@ function injectCss() {
   style.id = 'wdb-grid-css';
   style.textContent = GRID_CSS;
   document.head.appendChild(style);
+}
+
+// Скелет тела грида: семь полос-строк, верхняя играет роль шапки.
+// Разметка строится в JS, чтобы страницы, поднимающие грид (Data.cshtml,
+// редактор), не повторяли её у себя.
+const SKELETON_ROWS = 7;
+const SKELETON_CELLS = 4;
+
+function buildSkeleton() {
+  const box = document.createElement('div');
+  box.className = 'wdb-grid-loading';
+  const sr = document.createElement('span');
+  sr.className = 'wdb-sr';
+  sr.textContent = 'Загрузка данных…';
+  box.appendChild(sr);
+  const rows = document.createElement('div');
+  rows.className = 'wdb-grid-skrows';
+  rows.setAttribute('aria-hidden', 'true');
+  for (let r = 0; r < SKELETON_ROWS; r++) {
+    const row = document.createElement('div');
+    row.className = 'wdb-grid-skrow';
+    for (let c = 0; c < SKELETON_CELLS; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'wdb-sk';
+      row.appendChild(cell);
+    }
+    rows.appendChild(row);
+  }
+  box.appendChild(rows);
+  return box;
 }
 
 function toast(message, type) {
@@ -143,7 +218,12 @@ class VirtualGrid {
     this.spacer.className = 'wdb-grid-spacer';
     this.canvas = document.createElement('div');
     this.canvas.className = 'wdb-grid-canvas';
-    this.viewport.append(this.spacer, this.canvas);
+    // Скелет живёт внутри viewport (у него position:relative) и перекрывает
+    // тело грида, пока строк ещё нет. Шапку он не закрывает: когда колонки
+    // уже известны, их незачем прятать за плейсхолдером.
+    this.skeleton = buildSkeleton();
+    this.skeleton.hidden = true;
+    this.viewport.append(this.spacer, this.canvas, this.skeleton);
 
     this.status = document.createElement('div');
     this.status.className = 'wdb-grid-status';
@@ -224,6 +304,8 @@ class VirtualGrid {
 
   appendRows(batch) {
     if (!batch || !batch.length) return;
+    // Пришли данные — скелет больше не нужен, даже если стрим ещё открыт.
+    this.setLoading(null);
     this.rows.push(...batch);
     this.spacer.style.height = (this.rows.length * ROW_HEIGHT) + 'px';
     this.scheduleRender();
@@ -290,6 +372,17 @@ class VirtualGrid {
       rowEl.appendChild(cell);
     }
     return rowEl;
+  }
+
+  // ---------------- Индикация ожидания ----------------
+
+  /// Показывает ожидание одним из двух способов:
+  /// 'page' — скелет вместо тела (строк ещё нет: первая страница, сортировка,
+  ///          новый запрос), 'more' — бегунок в статусбаре (строки уже есть,
+  ///          ждём продолжение keyset-страницы), null — снять индикацию.
+  setLoading(kind) {
+    this.skeleton.hidden = kind !== 'page';
+    this.status.classList.toggle('loading', kind === 'more');
   }
 
   // ---------------- Статусбар ----------------
@@ -376,6 +469,8 @@ class VirtualGrid {
     this.reset();
     this.currentExecutionId = executionId;
     this.setStatus('Выполняется…');
+    // До первой строки показывать нечего: место результата держит скелет.
+    this.setLoading('page');
     const es = new EventSource(`/api/query/stream/${executionId}`);
     this.eventSource = es;
 
@@ -421,6 +516,8 @@ class VirtualGrid {
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
+      // Стрим закончился любым исходом (done, ошибка, отмена) — ожидание снято.
+      this.setLoading(null);
       // Редактор снимает состояние «выполняется» (кнопка «Отмена», статусбар).
       document.dispatchEvent(new CustomEvent('webdb:query-finished', {
         detail: { executionId: this.currentExecutionId },
@@ -460,7 +557,19 @@ class VirtualGrid {
   async loadPage(after) {
     if (this.loading) return;
     this.loading = true;
-    this.updateStatus('Загрузка…');
+    // Первая страница ждёт «вместо содержимого» (скелет), следующая —
+    // «в дополнение к содержимому» (бегунок в статусбаре).
+    this.setLoading(after ? 'more' : 'page');
+    // Перечитывание таблицы (открытие страницы, фильтр, сортировка) блокирует ввод
+    // целиком: тулбар остался бы кликабельным, а нажатия в нём относились бы к
+    // выборке, которая уже отменена. Отменить чтение страницы всё равно нечем.
+    // Догрузка при прокрутке не блокирует — работать с уже показанными строками можно.
+    const blockScreen = !after && window.WebDb && typeof window.WebDb.blockScreen === 'function';
+    if (blockScreen) window.WebDb.blockScreen();
+    // Статус переписывается только при перечитывании таблицы: у догрузки он
+    // остаётся прежним, иначе сообщение о неудаче предыдущей страницы
+    // затиралось бы каждой попыткой прокрутки.
+    if (!after) this.setStatus('Загрузка…');
     const started = performance.now();
     try {
       const res = await fetch(this.pageUrl(after));
@@ -481,6 +590,8 @@ class VirtualGrid {
       this.setStatus('Сеть недоступна.', true);
     } finally {
       this.loading = false;
+      this.setLoading(null);
+      if (blockScreen) window.WebDb.unblockScreen();
     }
   }
 

@@ -37,7 +37,12 @@
         <button type="submit" class="btn btn-primary btn-icon"
                 aria-label="Показать записи"
                 data-tip="Показать записи журнала за выбранный период">@UiIcons.Filter</button>
-        <span class="htmx-indicator">Загрузка…</span>
+        @* Подпись индикатора видна только скринридеру: рядом с иконочной кнопкой
+           текстовая метка ломает ряд (см. DESIGN.md, «только иконка»). *@
+        <span class="htmx-indicator" role="status">
+            <span class="spinner" aria-hidden="true"></span>
+            <span class="visually-hidden">Загрузка…</span>
+        </span>
     </form>
 
     <div id="audit-results">

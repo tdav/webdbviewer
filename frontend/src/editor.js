@@ -325,7 +325,21 @@ function setRunningState(running) {
     b.setAttribute('aria-disabled', String(!running));
   });
   const status = document.querySelector('[data-role="results-status"]');
-  if (status) status.textContent = running ? 'Выполняется…' : 'Готово';
+  if (!status) return;
+  status.replaceChildren();
+  if (!running) {
+    status.textContent = 'Готово';
+    return;
+  }
+  // «Выполняется» — единственное состояние статусбара, которое длится:
+  // кольцо рядом с подписью отличает ожидание от статичного текста.
+  const wrap = document.createElement('span');
+  wrap.className = 'status-running';
+  const ring = document.createElement('span');
+  ring.className = 'spinner';
+  ring.setAttribute('aria-hidden', 'true');
+  wrap.append(ring, document.createTextNode('Выполняется…'));
+  status.appendChild(wrap);
 }
 
 function runActive(wholeScript) {

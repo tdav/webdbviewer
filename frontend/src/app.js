@@ -13,6 +13,20 @@ const APP_CSS = `
 #wdb-loading{position:fixed;top:0;left:0;height:2px;width:100%;z-index:var(--z-tooltip,70);display:none;overflow:hidden;background:transparent}
 #wdb-loading .bar{height:100%;width:30%;background:var(--accent,#ff6b2c);animation:wdb-slide 1s linear infinite}
 @keyframes wdb-slide{0%{transform:translateX(-100%)}100%{transform:translateX(400%)}}
+/* Блокировщик ввода: перехватывает клики и затеняет страницу, пока идёт загрузка.
+   Появляется не сразу (см. BLOCK_DELAY_MS) — на быстром ответе мигание затемнения
+   раздражает сильнее, чем случайный клик по ещё не обновившейся разметке. */
+#wdb-blocker{
+  position:fixed;inset:0;z-index:var(--z-blocker,55);display:none;
+  align-items:center;justify-content:center;
+  background:var(--overlay-scrim,rgba(10,10,14,.58));cursor:progress
+}
+#wdb-blocker[data-visible]{display:flex}
+#wdb-blocker .ring{
+  width:34px;height:34px;border:3px solid var(--accent,#ff6b2c);border-top-color:transparent;
+  border-radius:50%;animation:wdb-spin .7s linear infinite
+}
+@keyframes wdb-spin{to{transform:rotate(360deg)}}
 #wdb-toasts{position:fixed;right:16px;bottom:16px;z-index:var(--z-toast,60);display:flex;flex-direction:column;gap:8px;max-width:380px}
 .wdb-toast{
   padding:10px 14px;border-radius:var(--radius-md,6px);
@@ -27,6 +41,8 @@ const APP_CSS = `
 .wdb-toast.info{background:var(--info-bg);border-color:var(--info);color:var(--info)}
 @media (prefers-reduced-motion: reduce){
   #wdb-loading .bar{animation:none;width:100%;opacity:.6}
+  /* Остановленное кольцо — разорванная окружность: гасим не движение, а вид. */
+  #wdb-blocker .ring{animation:none;border-top-color:var(--accent,#ff6b2c);opacity:.5}
 }
 `;
 
@@ -70,14 +86,85 @@ function ensureLoader() {
   return loader;
 }
 
+// --- Блокировщик ввода на время загрузки ---
+// Пока идёт запрос, страница показывает старое содержимое: клик по кнопке или
+// ссылке в этот момент уходит в разметку, которая вот-вот будет заменена.
+// Оверлей перехватывает такие клики.
+//
+// Появляется с задержкой: подавляющее большинство htmx-запросов здесь короче
+// 200 мс, и мгновенное затемнение на каждый из них читалось бы как моргание.
+const BLOCK_DELAY_MS = 200;
+// И держится минимум столько же — блокировщик, мелькнувший на один кадр, хуже,
+// чем не показанный вовсе.
+const BLOCK_MIN_VISIBLE_MS = 250;
+
+let blockTimer = null;
+let blockShownAt = 0;
+let blockHideTimer = null;
+
+function ensureBlocker() {
+  injectCss();
+  let blocker = document.getElementById('wdb-blocker');
+  if (!blocker) {
+    blocker = document.createElement('div');
+    blocker.id = 'wdb-blocker';
+    // Оверлей — сугубо визуальная преграда: содержание ожидания объявляет
+    // aria-busy на body, дублировать его отдельным live-region незачем.
+    blocker.setAttribute('aria-hidden', 'true');
+    blocker.innerHTML = '<div class="ring"></div>';
+    // Клики и колесо гасим здесь же: на оверлее курсор «занято», а не «нажми».
+    for (const type of ['click', 'mousedown', 'wheel', 'touchstart']) {
+      blocker.addEventListener(type, (e) => { e.preventDefault(); e.stopPropagation(); });
+    }
+    document.body.appendChild(blocker);
+  }
+  return blocker;
+}
+
+function showBlocker() {
+  clearTimeout(blockHideTimer);
+  blockHideTimer = null;
+  if (blockTimer !== null || ensureBlocker().hasAttribute('data-visible')) return;
+  blockTimer = setTimeout(() => {
+    blockTimer = null;
+    if (pendingRequests === 0) return; // запрос успел завершиться
+    ensureBlocker().setAttribute('data-visible', '');
+    document.body.setAttribute('aria-busy', 'true');
+    blockShownAt = Date.now();
+  }, BLOCK_DELAY_MS);
+}
+
+function hideBlocker() {
+  if (blockTimer !== null) {
+    // Запрос уложился в задержку — блокировщик так и не появился.
+    clearTimeout(blockTimer);
+    blockTimer = null;
+    return;
+  }
+  const blocker = ensureBlocker();
+  if (!blocker.hasAttribute('data-visible')) return;
+  const shownFor = Date.now() - blockShownAt;
+  const remaining = Math.max(0, BLOCK_MIN_VISIBLE_MS - shownFor);
+  clearTimeout(blockHideTimer);
+  blockHideTimer = setTimeout(() => {
+    blockHideTimer = null;
+    blocker.removeAttribute('data-visible');
+    document.body.removeAttribute('aria-busy');
+  }, remaining);
+}
+
 document.addEventListener('htmx:beforeRequest', () => {
   pendingRequests++;
   ensureLoader().style.display = 'block';
+  showBlocker();
 });
 
 document.addEventListener('htmx:afterRequest', () => {
   pendingRequests = Math.max(0, pendingRequests - 1);
-  if (pendingRequests === 0) ensureLoader().style.display = 'none';
+  if (pendingRequests === 0) {
+    hideBlocker();
+    ensureLoader().style.display = 'none';
+  }
 });
 
 // --- Обработчики ошибок HTMX (тосты на русском) ---
@@ -271,4 +358,16 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Публичный API.
-window.WebDb = { toast, toggleTheme, currentTheme };
+// blockScreen/unblockScreen — для загрузок мимо htmx (fetch в гриде и редакторе).
+// Счётчик общий с htmx-запросами, поэтому вложенные ожидания не гасят друг друга.
+function blockScreen() {
+  pendingRequests++;
+  showBlocker();
+}
+
+function unblockScreen() {
+  pendingRequests = Math.max(0, pendingRequests - 1);
+  if (pendingRequests === 0) hideBlocker();
+}
+
+window.WebDb = { toast, toggleTheme, currentTheme, blockScreen, unblockScreen };

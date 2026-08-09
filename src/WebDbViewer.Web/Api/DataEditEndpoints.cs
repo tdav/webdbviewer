@@ -41,7 +41,7 @@ public static class DataEditEndpoints
     /// <summary>Метаданные таблицы для клиентского редактора: PK, псевдоколонка адреса строки, колонки.</summary>
     private static async Task<IResult> GetTableInfoAsync(
         HttpContext http,
-        IDbSessionManager sessionManager,
+        IDbConnectionFactory connectionFactory,
         IDataSourceStore dataSourceStore,
         IDbProviderRegistry providers,
         Guid dsId,
@@ -57,14 +57,15 @@ public static class DataEditEndpoints
         if (config is null)
             return Results.NotFound(new { error = "Датасорс не найден." });
 
-        var userName = http.User.Identity?.Name ?? "anonymous";
-        var session = await sessionManager.GetOrCreateAsync(userName, dsId, db, ct);
         var provider = providers.Get(config.Kind);
 
+        // Отдельное соединение: панель правки грузится одновременно с первой страницей данных,
+        // и на общем соединении сессии обе команды роняли друг друга.
         TableInfo info;
         try
         {
-            info = await provider.GetTableInfoAsync(session.Connection, schema, table, ct);
+            await using var connection = await connectionFactory.OpenAsync(config, db, ct);
+            info = await provider.GetTableInfoAsync(connection, schema, table, ct);
         }
         catch (Exception ex)
         {
@@ -100,6 +101,7 @@ public static class DataEditEndpoints
         DataEditRequest request,
         HttpContext http,
         IDbSessionManager sessionManager,
+        IDbConnectionFactory connectionFactory,
         IDataSourceStore dataSourceStore,
         IDbProviderRegistry providers,
         IEnumerable<IDmlGenerator> generators,
@@ -133,6 +135,25 @@ public static class DataEditEndpoints
 
         var provider = providers.Get(config.Kind);
 
+        // Пакет правок — транзакция плюс серия команд на соединении сессии: занимаем его целиком,
+        // иначе параллельный запрос вклинится в середину пакета и оборвёт его.
+        IAsyncDisposable lease;
+        try
+        {
+            lease = await session.AcquireAsync(ct);
+        }
+        catch (DbSessionBusyException ex)
+        {
+            return Results.Json(new { error = ex.Message },
+                SseFormatter.JsonOptions, statusCode: StatusCodes.Status409Conflict);
+        }
+        await using var sessionLease = lease;
+
+        // Описания таблиц читаются отдельным соединением (сессия занята пакетом) и переиспользуются:
+        // в пакете обычно одна-две таблицы, а интроспекция каждой — несколько запросов к каталогу.
+        await using var metaConnection = await connectionFactory.OpenAsync(config, request.Db, ct);
+        var tableInfoCache = new Dictionary<(string Schema, string Table), TableInfo>();
+
         // Транзакционность: auto-commit — весь пакет атомарно (commit в конце / rollback при ошибке);
         // manual-commit — работаем в открытой транзакции пользователя (не начата — начинаем), commit делает он сам.
         var manualCommit = !session.AutoCommit;
@@ -159,7 +180,12 @@ public static class DataEditEndpoints
             try
             {
                 var edit = ToRowEdit(dto);
-                var tableInfo = await provider.GetTableInfoAsync(session.Connection, dto.Schema, dto.Table, ct);
+                var key = (dto.Schema, dto.Table);
+                if (!tableInfoCache.TryGetValue(key, out var tableInfo))
+                {
+                    tableInfo = await provider.GetTableInfoAsync(metaConnection, dto.Schema, dto.Table, ct);
+                    tableInfoCache[key] = tableInfo;
+                }
                 dml = generator.Build(tableInfo, edit);
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)

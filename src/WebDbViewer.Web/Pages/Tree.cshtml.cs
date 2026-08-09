@@ -13,18 +13,20 @@ namespace WebDbViewer.Web.Pages;
 public sealed class TreeModel : PageModel
 {
     private readonly IDataSourceStore _store;
-    private readonly IDbSessionManager _sessions;
+    // Навигатор читает каталог собственными короткоживущими соединениями: раскрытие узла
+    // не должно ни ждать выполняющийся в сессии запрос, ни конкурировать с ним за соединение.
+    private readonly IDbConnectionFactory _connections;
     private readonly IMetadataCache _metadata;
     private readonly ILogger<TreeModel> _logger;
 
     public TreeModel(
         IDataSourceStore store,
-        IDbSessionManager sessions,
+        IDbConnectionFactory connections,
         IMetadataCache metadata,
         ILogger<TreeModel> logger)
     {
         _store = store;
-        _sessions = sessions;
+        _connections = connections;
         _metadata = metadata;
         _logger = logger;
     }
@@ -44,7 +46,6 @@ public sealed class TreeModel : PageModel
                 return;
             }
 
-            var userName = User.Identity?.Name ?? "anonymous";
             var segments = SplitPath(path);
             var provider = HttpContext.RequestServices
                 .GetRequiredService<IDbProviderRegistry>()
@@ -57,24 +58,24 @@ public sealed class TreeModel : PageModel
             var database = withDatabaseLevel && segments.Count > 0 ? segments[0] : null;
             var schemaPath = withDatabaseLevel ? segments.Skip(1).ToList() : segments;
 
-            var session = await _sessions.GetOrCreateAsync(userName, ds, database, ct);
+            await using var connection = await _connections.OpenAsync(config, database, ct);
 
             if (withDatabaseLevel && segments.Count == 0)
             {
-                var databases = await provider.GetDatabasesAsync(session.Connection, includeSystem: !hideSystem, ct);
+                var databases = await provider.GetDatabasesAsync(connection, includeSystem: !hideSystem, ct);
                 Nodes = ToNodes(ds, path, databases, readOnly: config.ReadOnly);
                 return;
             }
 
             // Датасорс без права на все схемы: корень фильтруем, вглубь чужой схемы не пускаем.
-            var allowedSchemas = await SchemaScope.ResolveAsync(config, session.Connection, ct);
+            var allowedSchemas = await SchemaScope.ResolveAsync(config, connection, ct);
             if (schemaPath.Count > 0 && !SchemaScope.IsAllowed(allowedSchemas, schemaPath[0]))
             {
                 ErrorMessage = "Схема недоступна: подключение ограничено собственной схемой.";
                 return;
             }
 
-            var children = await provider.GetChildrenAsync(session.Connection, schemaPath, includeSystem: !hideSystem, ct);
+            var children = await provider.GetChildrenAsync(connection, schemaPath, includeSystem: !hideSystem, ct);
             if (schemaPath.Count == 0)
                 children = SchemaScope.Filter(allowedSchemas, children);
 
@@ -101,8 +102,8 @@ public sealed class TreeModel : PageModel
             var config = await _store.GetAsync(ds, ct);
             if (config is { AllowAllSchemas: false })
             {
-                var session = await _sessions.GetOrCreateAsync(User.Identity?.Name ?? "anonymous", ds, null, ct);
-                var allowedSchemas = await SchemaScope.ResolveAsync(config, session.Connection, ct);
+                await using var connection = await _connections.OpenAsync(config, null, ct);
+                var allowedSchemas = await SchemaScope.ResolveAsync(config, connection, ct);
                 found = SchemaScope.Filter(allowedSchemas, found);
             }
 
