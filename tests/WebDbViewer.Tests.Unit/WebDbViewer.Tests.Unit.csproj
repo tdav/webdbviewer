@@ -31,7 +31,7 @@
     <ProjectReference Include="..\..\src\WebDbViewer.Metadata\WebDbViewer.Metadata.csproj" />
     <ProjectReference Include="..\..\src\WebDbViewer.Providers.Postgres\WebDbViewer.Providers.Postgres.csproj" />
     <ProjectReference Include="..\..\src\WebDbViewer.Providers.Oracle\WebDbViewer.Providers.Oracle.csproj" />
-    <ProjectReference Include="..\..\src\WebDbViewer.Web\WebDbViewer.Web.csproj" />
+    <ProjectReference Include="..\..\src\WebDbViewer.Web\DbViewer.App.csproj" />
   </ItemGroup>
 
 </Project>
