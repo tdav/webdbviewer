@@ -15,6 +15,7 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
     // Базовые приоритеты сортировки (меньше = выше в списке).
     private const int PriorityContextBoost = 5;
     private const int PriorityColumn = 10;
+    private const int PriorityFunction = 15;
     private const int PriorityTable = 20;
     private const int PriorityKeyword = 30;
 
@@ -70,7 +71,7 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
         GrammarCandidates grammar;
         try
         {
-            grammar = GrammarAnalyzer.Analyze(prefix, dialect);
+            grammar = GrammarAnalyzer.Analyze(sql, caret, dialect);
         }
         catch
         {
@@ -113,13 +114,24 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
                 await AddTablesAsync(items, request, snapshot, wordPrefix, tablePriority, dialect, ct);
 
             if (suggestColumns && snapshot is not null)
+            {
                 AddColumns(items, snapshot, sql, alias, wordPrefix, columnPriority, dialect);
+                if (alias is null)
+                    AddRoutines(items, snapshot, wordPrefix, dialect);
+            }
         }
 
         // ---------- 4. Ключевые слова из грамматики (при «алиас.» не имеют смысла).
         if (alias is null)
         {
-            foreach (var kw in grammar.Keywords.OrderBy(k => k, StringComparer.Ordinal))
+            // Грамматика не дала кандидатов — сбой разбора или позиция, которую она не описывает.
+            // Подставляем словарь диалекта, но только при начатом слове: иначе несколько тысяч
+            // ключевых слов вытеснят из лимита объекты схемы.
+            var keywords = grammar.Keywords.Count == 0 && wordPrefix.Length > 0
+                ? GrammarAnalyzer.DialectKeywords(dialect)
+                : grammar.Keywords;
+
+            foreach (var kw in keywords.OrderBy(k => k, StringComparer.Ordinal))
             {
                 if (wordPrefix.Length > 0 && !kw.StartsWith(wordPrefix, StringComparison.OrdinalIgnoreCase))
                     continue;
@@ -264,6 +276,45 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
                 });
             }
         }
+    }
+
+    /// <summary>Функции и процедуры схемы — там же, где предлагаются колонки.</summary>
+    private static void AddRoutines(
+        List<CompletionItem> items, SchemaSnapshot snapshot, string wordPrefix, DbKind dialect)
+    {
+        foreach (var routine in snapshot.Routines)
+        {
+            if (wordPrefix.Length > 0 && !routine.Name.StartsWith(wordPrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+            items.Add(RoutineItem(routine, PriorityFunction, dialect));
+        }
+    }
+
+    /// <summary>
+    /// Элемент вызова процедуры или функции. Вставка открывает скобку: аргументы всё равно
+    /// набираются вручную, а закрывающую скобку ставит сам редактор (closeBrackets).
+    /// </summary>
+    internal static CompletionItem RoutineItem(RoutineInfo routine, int priority, DbKind dialect)
+    {
+        var kindWord = routine.Type == DbObjectType.Procedure ? "процедура" : "функция";
+        var signature = string.IsNullOrWhiteSpace(routine.ArgumentsSignature)
+            ? $"{routine.Schema}.{routine.Name}()"
+            : $"{routine.Schema}.{routine.Name}({routine.ArgumentsSignature})";
+        var documentation = string.IsNullOrWhiteSpace(routine.ReturnType)
+            ? routine.Comment
+            : string.IsNullOrWhiteSpace(routine.Comment)
+                ? $"{kindWord}, возвращает {routine.ReturnType}"
+                : $"{routine.Comment}\n\n{kindWord}, возвращает {routine.ReturnType}";
+
+        return new CompletionItem
+        {
+            Label = routine.Name,
+            Kind = "function",
+            InsertText = SqlIdentifierQuoting.Quote(routine.Name, dialect) + "(",
+            Detail = signature,
+            Documentation = documentation,
+            SortPriority = priority,
+        };
     }
 
     private static TableInfo? FindTable(SchemaSnapshot snapshot, string name)

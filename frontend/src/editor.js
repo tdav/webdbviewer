@@ -97,6 +97,50 @@ const KIND_MAP = {
 function makeCompletionSource(textarea) {
   let timer = null;
   let controller = null;
+  let pendingResolve = null;
+
+  // Отложенный запрос вытеснен более свежим. Его промис обязан завершиться:
+  // брошенный неразрешённым, он заставляет CodeMirror ждать вечно.
+  function dropPending() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (pendingResolve) { pendingResolve(null); pendingResolve = null; }
+  }
+
+  async function fetchCompletions(context, word) {
+    if (controller) controller.abort(); // отмена устаревшего запроса
+    controller = new AbortController();
+    try {
+      const res = await fetch('/api/completion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dsId: textarea.dataset.dsId,
+          sql: context.state.doc.toString(),
+          caretOffset: context.pos,
+          defaultSchema: currentSchema(),
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const items = Array.isArray(data) ? data : (data.items || []);
+      return {
+        from: word && word.from !== word.to ? word.from : context.pos,
+        options: items.map((it) => ({
+          label: it.label,
+          type: KIND_MAP[it.kind] || 'text',
+          apply: it.insertText || undefined,
+          detail: it.detail || undefined,
+          info: it.documentation || undefined,
+          boost: -(it.sortPriority || 0), // меньший SortPriority — выше в списке
+        })),
+        // Точка не входит в validFor: новый квалификатор — новый контекст, нужен перезапрос.
+        validFor: /^[\w"$]*$/,
+      };
+    } catch (e) {
+      return null; // AbortError и сетевые ошибки — просто без подсказок
+    }
+  }
 
   return (context) => {
     // chain — вся цепочка с квалификаторами («schema.», «alias.tbl.»): по ней решаем,
@@ -107,51 +151,46 @@ function makeCompletionSource(textarea) {
     const chain = context.matchBefore(/[\w"$.]*/);
     const word = context.matchBefore(/[\w"$]*/);
     if (!context.explicit && (!chain || chain.from === chain.to)) return null;
-    const dsId = textarea.dataset.dsId;
-    if (!dsId) return null;
+    if (!textarea.dataset.dsId) return null;
     // Кэш метаданных строится только для базы из настроек подключения: в чужой базе
     // подсказки объектов были бы из другой БД — не предлагаем их вовсе.
     if (!isPrimaryDatabaseSelected()) return null;
 
+    // Ctrl+Space: пользователь ждёт список сейчас, а не через четверть секунды.
+    // Debounce существует, чтобы не слать запрос на каждую букву, — к явному вызову
+    // это не относится.
+    if (context.explicit) {
+      dropPending();
+      return fetchCompletions(context, word);
+    }
+
     return new Promise((resolve) => {
-      if (timer) clearTimeout(timer);
+      dropPending();
+      pendingResolve = resolve;
       timer = setTimeout(async () => {
-        if (controller) controller.abort(); // отмена устаревшего запроса
-        controller = new AbortController();
-        try {
-          const res = await fetch('/api/completion', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              dsId,
-              sql: context.state.doc.toString(),
-              caretOffset: context.pos,
-              defaultSchema: currentSchema(),
-            }),
-            signal: controller.signal,
-          });
-          if (!res.ok) { resolve(null); return; }
-          const data = await res.json();
-          const items = Array.isArray(data) ? data : (data.items || []);
-          resolve({
-            from: word && word.from !== word.to ? word.from : context.pos,
-            options: items.map((it) => ({
-              label: it.label,
-              type: KIND_MAP[it.kind] || 'text',
-              apply: it.insertText || undefined,
-              detail: it.detail || undefined,
-              info: it.documentation || undefined,
-              boost: -(it.sortPriority || 0), // меньший SortPriority — выше в списке
-            })),
-            // Точка не входит в validFor: новый квалификатор — новый контекст, нужен перезапрос.
-            validFor: /^[\w"$]*$/,
-          });
-        } catch (e) {
-          resolve(null); // AbortError и сетевые ошибки — просто без подсказок
-        }
+        timer = null;
+        pendingResolve = null;
+        resolve(await fetchCompletions(context, word));
       }, COMPLETION_DEBOUNCE_MS);
     });
   };
+}
+
+// --- Прогрев кэша метаданных ---
+// Интроспекция схемы занимает секунды. Без прогрева её ждёт первый же Ctrl+Space,
+// поэтому запускаем её при открытии редактора и при смене датасорса или схемы.
+let lastWarmup = null;
+
+function warmupCompletion(dsId, schema) {
+  if (!dsId) return;
+  const key = dsId + '/' + (schema || '');
+  if (key === lastWarmup) return; // повторный прогрев той же схемы не нужен
+  lastWarmup = key;
+  fetch('/api/completion/warmup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dsId, schema }),
+  }).catch(() => { /* прогрев необязателен: подсказки просто придут медленнее */ });
 }
 
 // --- Текущая схема из тулбара (используется автодополнением) ---
@@ -278,6 +317,8 @@ function initEditor(textarea) {
   textarea.style.display = 'none';
   views.push({ view, textarea });
 
+  warmupCompletion(textarea.dataset.dsId, currentSchema());
+
   // Перед submit формы — синхронизация значения в скрытый textarea.
   const form = textarea.closest('form');
   if (form && form.dataset.wdbEditorSyncBound !== '1') {
@@ -359,7 +400,16 @@ document.addEventListener('webdb:query-finished', () => setRunningState(false));
 // сессия предыдущего датасорса больше не годится, диалект может измениться.
 document.addEventListener('change', (e) => {
   const select = e.target;
-  if (!select || select.dataset === undefined || select.dataset.role !== 'datasource-select') return;
+  if (!select || select.dataset === undefined) return;
+
+  // Смена схемы — тот же датасорс, но подсказки пойдут по другому набору объектов.
+  if (select.dataset.role === 'schema-select') {
+    const editor = activeEditor();
+    if (editor) warmupCompletion(editor.textarea.dataset.dsId, select.value || null);
+    return;
+  }
+
+  if (select.dataset.role !== 'datasource-select') return;
   const kind = select.selectedOptions[0] ? select.selectedOptions[0].dataset.kind : null;
   const ext = dialectExtension(kind);
   for (const { view, textarea } of views) {
@@ -368,6 +418,7 @@ document.addEventListener('change', (e) => {
     delete textarea.dataset.sessionId;
     view.dispatch({ effects: dialectCompartment.reconfigure(ext) });
   }
+  warmupCompletion(select.value || '', currentSchema());
 });
 
 // Инициализация: при загрузке страницы и после HTMX-свопов.

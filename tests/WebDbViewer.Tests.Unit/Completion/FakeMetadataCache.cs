@@ -37,6 +37,25 @@ public sealed class FakeMetadataCache : IMetadataCache
                 PrimaryKeyColumns = ["id"],
             },
         ],
+        Routines =
+        [
+            new RoutineInfo
+            {
+                Schema = "public",
+                Name = "calc_total",
+                Type = DbObjectType.Function,
+                ReturnType = "numeric",
+                ArgumentsSignature = "order_id bigint",
+                Comment = "Сумма заказа с учётом скидок",
+            },
+            new RoutineInfo
+            {
+                Schema = "public",
+                Name = "archive_orders",
+                Type = DbObjectType.Procedure,
+                ArgumentsSignature = "before date",
+            },
+        ],
         LoadedAt = DateTimeOffset.UtcNow,
     };
 

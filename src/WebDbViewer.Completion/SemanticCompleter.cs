@@ -20,6 +20,7 @@ internal sealed class SemanticCompleter
         public const int FkRelatedTable = 6;  // таблицы с FK-связями к уже используемым
         public const int ContextTable = 8;    // прочие таблицы в позиции таблицы
         public const int OtherColumn = 10;    // колонки вне распознанного scope
+        public const int Routine = 12;        // функции и процедуры схемы
         public const int SchemaName = 15;
     }
 
@@ -88,6 +89,7 @@ internal sealed class SemanticCompleter
         {
             AddFkJoinSnippets(items, scope, snapshots, caret, wordPrefix, dialect);
             AddScopeColumns(items, scope, snapshots, wordPrefix, dialect, defaultSnapshot);
+            AddRoutines(items, snapshots, wordPrefix, dialect);
             return items;
         }
 
@@ -96,6 +98,7 @@ internal sealed class SemanticCompleter
         {
             AddSelectAliases(items, scope, wordPrefix, dialect);
             AddScopeColumns(items, scope, snapshots, wordPrefix, dialect, defaultSnapshot);
+            AddRoutines(items, snapshots, wordPrefix, dialect);
             return items;
         }
 
@@ -103,6 +106,7 @@ internal sealed class SemanticCompleter
         if (clause is "SELECT" or "WHERE" or "HAVING" or "ON" or "SET" || grammarSuggestsColumns)
         {
             AddScopeColumns(items, scope, snapshots, wordPrefix, dialect, defaultSnapshot);
+            AddRoutines(items, snapshots, wordPrefix, dialect);
             return items;
         }
 
@@ -159,6 +163,7 @@ internal sealed class SemanticCompleter
                 foreach (var t in schemaSnap.Tables)
                     AddTableItem(items, t.Name, t.Schema, t.Type, t.Comment, wordPrefix,
                         Priority.ContextTable, aliasFactory: null, dialect);
+                AddRoutines(items, [schemaSnap], wordPrefix, dialect);
                 return true;
             }
             return false;
@@ -449,6 +454,31 @@ internal sealed class SemanticCompleter
             {
                 foreach (var c in t.Columns)
                     AddColumnItem(items, c, t.Name, wordPrefix, Priority.OtherColumn, dialect);
+            }
+        }
+    }
+
+    // ================================================================== Функции и процедуры
+
+    /// <summary>
+    /// Функции и процедуры закэшированных схем. Перегрузки (одно имя, разные аргументы)
+    /// сворачиваются в один элемент: в списке подсказок десяток одинаковых меток бесполезен,
+    /// а сигнатура первой из них уже показывает, как вызов выглядит.
+    /// </summary>
+    private static void AddRoutines(
+        List<CompletionItem> items, List<SchemaSnapshot> snapshots, string wordPrefix, DbKind dialect)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var snapshot in snapshots)
+        {
+            foreach (var routine in snapshot.Routines)
+            {
+                var rank = HumpsMatcher.MatchRank(wordPrefix, routine.Name);
+                if (rank is null)
+                    continue;
+                if (!seen.Add(routine.Schema + "." + routine.Name))
+                    continue;
+                items.Add(CompletionEngine.RoutineItem(routine, Priority.Routine + rank.Value, dialect));
             }
         }
     }
