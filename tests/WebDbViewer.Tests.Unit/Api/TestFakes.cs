@@ -25,7 +25,16 @@ internal sealed class FakeDbSession : IDbSession
 
     public void CancelRunning() => Interlocked.Increment(ref CancelRunningCalls);
 
+    /// <summary>Фейк не сериализует доступ: конкурентных команд в юнит-тестах нет.</summary>
+    public Task<IAsyncDisposable> AcquireAsync(CancellationToken ct) =>
+        Task.FromResult<IAsyncDisposable>(new NoopLease());
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    private sealed class NoopLease : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
 }
 
 /// <summary>Пустое DbConnection-заглушка (никогда не открывается в юнит-тестах).</summary>

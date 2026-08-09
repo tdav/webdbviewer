@@ -86,7 +86,10 @@
                         hx-vals='js:{index: window.wdvNextTabIndex ? window.wdvNextTabIndex() : 1}'
                         hx-target="#editor-panes"
                         hx-swap="beforeend">@UiIcons.Plus</button>
-                <span class="htmx-indicator">…</span>
+                <span class="htmx-indicator" role="status">
+                    <span class="spinner" aria-hidden="true"></span>
+                    <span class="visually-hidden">Открываем вкладку…</span>
+                </span>
             </div>
 
             <div class="editor-toolbar">

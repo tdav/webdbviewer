@@ -25,6 +25,12 @@ public static class DbSessionsExtensions
         services.TryAddSingleton<IDataSourceStore>(sp =>
             new DataSourceFileStore(sp.GetRequiredService<IOptions<DbSessionOptions>>().Value.DataSourcesFilePath));
 
+        // Короткоживущие соединения для чтения метаданных — мимо сессий пользователя.
+        services.TryAddSingleton<IDbConnectionFactory>(sp => new DbConnectionFactory(
+            sp.GetRequiredService<IDataSourceStore>(),
+            sp.GetRequiredService<IDbProviderRegistry>(),
+            sp.GetService<ISecretProtector>()));
+
         services.TryAddSingleton(sp => new DbSessionManager(
             sp.GetRequiredService<IDataSourceStore>(),
             sp.GetRequiredService<IDbProviderRegistry>(),

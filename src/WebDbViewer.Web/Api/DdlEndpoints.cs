@@ -31,7 +31,7 @@ public static class DdlEndpoints
     /// </summary>
     private static async Task<IResult> GetDdlAsync(
         HttpContext http,
-        IDbSessionManager sessionManager,
+        IDbConnectionFactory connectionFactory,
         IDataSourceStore dataSourceStore,
         IEnumerable<IDdlGenerator> generators,
         Guid ds,
@@ -53,12 +53,12 @@ public static class DdlEndpoints
         if (generator is null)
             return Results.Problem($"Генератор DDL для «{config.Kind}» не зарегистрирован.", statusCode: 500);
 
-        var userName = http.User.Identity?.Name ?? "anonymous";
-        var session = await sessionManager.GetOrCreateAsync(userName, ds, db, ct);
-
         try
         {
-            var ddl = await DdlText.GetAsync(generator, session.Connection, schema, name, type, qualifier, ct);
+            // Чтение DDL — интроспекция каталога: сессия пользователя (её транзакция и её
+            // единственное соединение) для этого не нужна.
+            await using var connection = await connectionFactory.OpenAsync(config, db, ct);
+            var ddl = await DdlText.GetAsync(generator, connection, schema, name, type, qualifier, ct);
 
             if (ddl is null)
                 return Results.BadRequest(new { error = $"Неизвестный тип объекта: «{type}»." });

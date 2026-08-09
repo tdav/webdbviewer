@@ -65,7 +65,34 @@
          data-table="@Model.Table"
          data-database="@(Model.IsOtherDatabase ? Model.Database : null)"
          data-readonly="@(Model.IsReadOnly ? "true" : "false")">
-        <div class="results-placeholder">Загрузка данных таблицы…</div>
+        @* Скелет таблицы держит место до того, как grid.js поднимется и очистит
+           контейнер (buildDom): страница не «прыгает» от пустоты к сетке. *@
+        <div class="results-placeholder results-placeholder--loading" role="status">
+            <span class="visually-hidden">Загрузка данных таблицы…</span>
+            <div class="skeleton-table" aria-hidden="true">
+                <div class="skeleton-row skeleton-row--head">
+                    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="results-status" id="data-status" data-role="grid-status">Готово</div>

@@ -166,6 +166,11 @@ public static class QueryEndpoints
 
         try
         {
+            // Скрипт выполняется на соединении сессии: занимаем его целиком, иначе параллельный
+            // запрос (страница данных, правка) вклинится между statements одного скрипта.
+            // DbSessionBusyException отсюда уходит клиенту как событие error — это ловит catch ниже.
+            await using var lease = await running.Session.AcquireAsync(ct);
+
             foreach (var statement in running.Statements)
             {
                 ct.ThrowIfCancellationRequested();
@@ -300,6 +305,7 @@ public static class QueryEndpoints
     private static async Task<IResult> GetDataPageAsync(
         HttpContext http,
         IDbSessionManager sessionManager,
+        IDbConnectionFactory connectionFactory,
         IDataSourceStore dataSourceStore,
         IDbProviderRegistry providers,
         Guid dsId,
@@ -324,7 +330,14 @@ public static class QueryEndpoints
         var session = await sessionManager.GetOrCreateAsync(userName, dsId, db, ct);
         var provider = providers.Get(config.Kind);
 
-        var tableInfo = await provider.GetTableInfoAsync(session.Connection, schema, table, ct);
+        // Описание таблицы читается отдельным соединением: оно не зависит от состояния сессии,
+        // а на её единственном соединении конкурировало бы с чтением страницы данных
+        // (страница данных и панель правки грузятся параллельно и роняли друг друга).
+        TableInfo tableInfo;
+        await using (var metaConnection = await connectionFactory.OpenAsync(config, db, ct))
+        {
+            tableInfo = await provider.GetTableInfoAsync(metaConnection, schema, table, ct);
+        }
 
         // Значения keyset-ключа последней строки предыдущей страницы (JSON-массив).
         IReadOnlyList<object?>? afterValues = null;
@@ -353,6 +366,19 @@ public static class QueryEndpoints
         };
 
         var sql = provider.BuildSelectPageSql(tableInfo, request);
+
+        // Чтение данных идёт по сессии (видит незакоммиченные изменения открытой транзакции),
+        // поэтому соединение занимается на время команды.
+        IAsyncDisposable lease;
+        try
+        {
+            lease = await session.AcquireAsync(ct);
+        }
+        catch (DbSessionBusyException ex)
+        {
+            return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status409Conflict);
+        }
+        await using var _ = lease;
 
         await using var cmd = session.Connection.CreateCommand();
         cmd.CommandText = sql;

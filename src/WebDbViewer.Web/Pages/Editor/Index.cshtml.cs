@@ -11,18 +11,20 @@ namespace WebDbViewer.Web.Pages.Editor;
 public sealed class EditorIndexModel : PageModel
 {
     private readonly IDataSourceStore _store;
-    private readonly IDbSessionManager _sessions;
+    // Списки баз/схем и тексты DDL — интроспекция каталога: читаются вне сессии пользователя,
+    // чтобы не конкурировать с выполняющимся в ней запросом за единственное соединение.
+    private readonly IDbConnectionFactory _connections;
     private readonly IDbProviderRegistry _providers;
     private readonly ILogger<EditorIndexModel> _logger;
 
     public EditorIndexModel(
         IDataSourceStore store,
-        IDbSessionManager sessions,
+        IDbConnectionFactory connections,
         IDbProviderRegistry providers,
         ILogger<EditorIndexModel> logger)
     {
         _store = store;
-        _sessions = sessions;
+        _connections = connections;
         _providers = providers;
         _logger = logger;
     }
@@ -85,10 +87,10 @@ public sealed class EditorIndexModel : PageModel
 
         try
         {
-            var session = await _sessions.GetOrCreateAsync(User.Identity?.Name ?? "anonymous", ds, db, ct);
+            await using var connection = await _connections.OpenAsync(config, db, ct);
             var text = isDrop
-                ? await DdlText.GetDropAsync(generator, session.Connection, schema, name, type, qualifier, ct)
-                : await DdlText.GetAsync(generator, session.Connection, schema, name, type, qualifier, ct);
+                ? await DdlText.GetDropAsync(generator, connection, schema, name, type, qualifier, ct)
+                : await DdlText.GetAsync(generator, connection, schema, name, type, qualifier, ct);
 
             if (text is null)
                 return Partial("_EditorTab", tab with { Content = $"-- Неизвестный тип объекта: «{type}»." });
@@ -160,27 +162,26 @@ public sealed class EditorIndexModel : PageModel
 
         try
         {
-            var userName = User.Identity?.Name ?? "anonymous";
             var provider = _providers.Get(config.Kind);
             var withDatabaseLevel = config.AllowAllSchemas && provider.SupportsDatabaseLevel;
 
             IReadOnlyList<string> databases = [];
             if (withDatabaseLevel)
             {
-                var primary = await _sessions.GetOrCreateAsync(userName, ds, null, ct);
-                databases = (await provider.GetDatabasesAsync(primary.Connection, includeSystem: false, ct))
+                await using var primary = await _connections.OpenAsync(config, null, ct);
+                databases = (await provider.GetDatabasesAsync(primary, includeSystem: false, ct))
                     .Select(n => n.Name)
                     .ToList();
             }
 
             // База по умолчанию — из настроек подключения; чужую базу принимаем только из её списка.
             var selectedDatabase = databases.Contains(db, StringComparer.Ordinal) ? db : config.Database;
-            var session = await _sessions.GetOrCreateAsync(userName, ds, selectedDatabase, ct);
+            await using var connection = await _connections.OpenAsync(config, selectedDatabase, ct);
 
-            var schemas = await provider.GetSchemasAsync(session.Connection, includeSystem: false, ct);
+            var schemas = await provider.GetSchemasAsync(connection, includeSystem: false, ct);
 
             // Датасорс без права на все схемы: показываем только собственную схему подключения.
-            var allowedSchemas = await SchemaScope.ResolveAsync(config, session.Connection, ct);
+            var allowedSchemas = await SchemaScope.ResolveAsync(config, connection, ct);
             if (allowedSchemas is not null)
                 schemas = schemas.Where(allowedSchemas.Contains).ToList();
 

@@ -99,6 +99,39 @@ public interface IDbSession : IAsyncDisposable
 
     /// <summary>Отменяет текущую выполняющуюся команду.</summary>
     void CancelRunning();
+
+    /// <summary>
+    /// Занимает соединение сессии под одну команду. Физическое соединение обслуживает ровно одну
+    /// команду за раз, а сессия общая для всех запросов пользователя к датасорсу — без этой
+    /// сериализации два параллельных HTTP-запроса роняют друг друга («A command is already in progress»).
+    /// Ожидание ограничено таймаутом: висеть до конца чужого получасового SELECT бессмысленно.
+    /// </summary>
+    /// <exception cref="DbSessionBusyException">Соединение не освободилось за отведённое время.</exception>
+    Task<IAsyncDisposable> AcquireAsync(CancellationToken ct);
+}
+
+/// <summary>
+/// Соединение сессии занято другой командой дольше отведённого времени ожидания.
+/// Вызывающий переводит это в ответ «в сессии уже выполняется запрос», а не в 500.
+/// </summary>
+public sealed class DbSessionBusyException(string message) : InvalidOperationException(message);
+
+/// <summary>
+/// Открывает короткоживущие соединения к датасорсу вне пользовательской сессии.
+/// Чтение метаданных (навигатор, DDL, описание таблицы) не нуждается в состоянии сессии,
+/// а конкуренция за её единственное соединение — прямой источник сбоев и ожиданий.
+/// </summary>
+public interface IDbConnectionFactory
+{
+    /// <summary>
+    /// Открывает соединение к датасорсу. <paramref name="database"/> — база сервера, отличная от базы
+    /// из конфигурации (навигатор по всем базам); null — база датасорса.
+    /// Вызывающий обязан освободить соединение (<c>await using</c>).
+    /// </summary>
+    Task<DbConnection> OpenAsync(Guid dataSourceId, string? database, CancellationToken ct);
+
+    /// <summary>Вариант для уже загруженной конфигурации: не читает хранилище датасорсов повторно.</summary>
+    Task<DbConnection> OpenAsync(DataSourceConfig config, string? database, CancellationToken ct);
 }
 
 /// <summary>Менеджер stateful-сессий: лимиты на пользователя, TTL, гарантированное освобождение.</summary>
