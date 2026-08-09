@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using WebDbViewer.Core;
+using WebDbViewer.Core.Ddl;
+using WebDbViewer.Web.Api;
 using WebDbViewer.Web.Services;
 
 namespace WebDbViewer.Web.Pages.Editor;
@@ -45,6 +47,67 @@ public sealed class EditorIndexModel : PageModel
             DefaultDsId = defaultDs?.Id,
             DefaultDialect = defaultDs?.Kind.ToString().ToLowerInvariant()
         });
+    }
+
+    /// <summary>
+    /// Вкладка редактора со скриптом объекта
+    /// (hx-get="/editor?handler=DdlTab&amp;ds=…&amp;schema=…&amp;name=…&amp;type=…&amp;script=ddl|drop").
+    /// qualifier уточняет объект среди одноимённых: таблица-владелец для триггера, правила
+    /// и политики RLS, сигнатура аргументов для перегруженной функции.
+    /// Скрипт только открывается в редакторе — выполняет его пользователь.
+    /// Ошибка не ломает вкладку: её текст приходит комментарием в теле редактора.
+    /// </summary>
+    public async Task<IActionResult> OnGetDdlTabAsync(
+        int index, Guid ds, string? schema, string? name, string? type, string? qualifier, string? db, string? script,
+        [FromServices] IEnumerable<IDdlGenerator> generators,
+        CancellationToken ct)
+    {
+        DataSources = await _store.GetAllAsync(ct);
+        if (index < 1)
+            index = 1;
+
+        var isDrop = string.Equals(script, "drop", StringComparison.OrdinalIgnoreCase);
+        var config = await _store.GetAsync(ds, ct);
+        var tab = new EditorTabVm
+        {
+            Index = index,
+            Title = isDrop ? $"DROP {name}" : name ?? "DDL",
+            DefaultDsId = ds == Guid.Empty ? config?.Id : ds,
+            DefaultDialect = config?.Kind.ToString().ToLowerInvariant(),
+        };
+
+        if (config is null || string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(type))
+            return Partial("_EditorTab", tab with { Content = "-- Не заданы параметры объекта для получения скрипта." });
+
+        var generator = generators.FirstOrDefault(g => g.Kind == config.Kind);
+        if (generator is null)
+            return Partial("_EditorTab", tab with { Content = $"-- Генератор DDL для «{config.Kind}» не зарегистрирован." });
+
+        try
+        {
+            var session = await _sessions.GetOrCreateAsync(User.Identity?.Name ?? "anonymous", ds, db, ct);
+            var text = isDrop
+                ? await DdlText.GetDropAsync(generator, session.Connection, schema, name, type, qualifier, ct)
+                : await DdlText.GetAsync(generator, session.Connection, schema, name, type, qualifier, ct);
+
+            if (text is null)
+                return Partial("_EditorTab", tab with { Content = $"-- Неизвестный тип объекта: «{type}»." });
+
+            // Скрипт удаления снабжается предупреждением: он не выполняется сам,
+            // но открывается в редакторе, где Ctrl+Enter находится в одном нажатии.
+            var content = isDrop
+                ? $"-- Удаление объекта «{schema}.{name}». Скрипт НЕ выполнен.\n"
+                  + "-- Проверьте зависимости; CASCADE при необходимости допишите вручную.\n\n"
+                  + text
+                : text;
+
+            return Partial("_EditorTab", tab with { Content = content });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка получения скрипта: ds={Ds}, {Schema}.{Name} ({Type}, {Script})", ds, schema, name, type, script);
+            return Partial("_EditorTab", tab with { Content = $"-- Не удалось получить скрипт «{schema}.{name}»:\n-- {ex.Message}" });
+        }
     }
 
     /// <summary>
@@ -119,6 +182,12 @@ public sealed record EditorTabVm
 
     /// <summary>Диалект для CodeMirror: "postgres" | "oracle".</summary>
     public string? DefaultDialect { get; init; }
+
+    /// <summary>Подпись на кнопке вкладки; null — «Запрос N».</summary>
+    public string? Title { get; init; }
+
+    /// <summary>Начальный текст редактора (например, DDL объекта); null — пустая вкладка.</summary>
+    public string? Content { get; init; }
 
     public string TabId => $"tab-{Index}";
 }

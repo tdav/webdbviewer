@@ -164,6 +164,23 @@ public sealed class PgDdlGenerator : IDdlGenerator
         return sb.ToString().TrimEnd() + "\n";
     }
 
+    // ---------------------------------------------------------------- Прочие объекты схемы
+
+    /// <summary>
+    /// DDL последовательностей, типов, доменов, агрегатов, операторов, правил сортировки,
+    /// объектов FTS, внешних таблиц, триггеров, правил и политик RLS.
+    /// В отличие от таблиц и представлений текст собирается запросом к каталогу целиком,
+    /// поэтому <see cref="IPgDdlCatalogReader"/> здесь не участвует.
+    /// </summary>
+    public Task<string> GetObjectDdlAsync(
+        DbConnection connection, string schema, string name, DbObjectType type, string? owner, CancellationToken ct)
+        => PgObjectDdl.BuildAsync(connection, schema, name, type, owner, ct);
+
+    /// <summary>Скрипт DROP: текст оператора, готовый к правке и выполнению вручную.</summary>
+    public Task<string> GetDropScriptAsync(
+        DbConnection connection, string schema, string name, DbObjectType type, string? qualifier, CancellationToken ct)
+        => PgDropScript.BuildAsync(connection, schema, name, type, qualifier, ct);
+
     // ---------------------------------------------------------------- Вспомогательное
 
     private static string Quote(string identifier) => Quoting.QuoteIdentifier(identifier);

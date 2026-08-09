@@ -4,7 +4,7 @@
     {
       "name": "webdbviewer",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "src/WebDbViewer.Web/WebDbViewer.Web.csproj", "--launch-profile", "http"],
+      "runtimeArgs": ["run", "--project", "src/WebDbViewer.Web/DbViewer.App.csproj", "--launch-profile", "http"],
       "port": 5044
     }
   ]

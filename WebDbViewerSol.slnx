@@ -4,6 +4,7 @@
     <Project Path="src/WebDbViewer.Core/WebDbViewer.Core.csproj" />
     <Project Path="src/WebDbViewer.Metadata/WebDbViewer.Metadata.csproj" />
     <Project Path="src/WebDbViewer.Parsing/WebDbViewer.Parsing.csproj" />
+    <Project Path="src/WebDbViewer.Parsing.Grammars/WebDbViewer.Parsing.Grammars.csproj" />
     <Project Path="src/WebDbViewer.Providers.Oracle/WebDbViewer.Providers.Oracle.csproj" />
     <Project Path="src/WebDbViewer.Providers.Postgres/WebDbViewer.Providers.Postgres.csproj" />
     <Project Path="src/WebDbViewer.Storage.Postgres/WebDbViewer.Storage.Postgres.csproj" />

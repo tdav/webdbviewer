@@ -17,10 +17,10 @@ endpoint, отрисовывается ли UI).
 
 | Пункт | Состояние | Комментарий |
 |---|---|---|
-| Solution и проекты | Работает | 8 проектов (`WebDbViewer.Storage.Postgres` добавлен при переносе настроек в БД) |
+| Solution и проекты | Работает | 9 проектов (`WebDbViewer.Storage.Postgres` добавлен при переносе настроек в БД, `WebDbViewer.Parsing.Grammars` выделен ради скорости сборки) |
 | Контракты Core | Работает | `IDbProvider`, `IDataSourceStore`, `IMetadataCache`, `ICompletionEngine`, `IQueryAuditor`, `IUserStore` |
 | JS-инфраструктура (esbuild) | Работает | `frontend/build.mjs`, бандлы в `wwwroot/js` |
-| Генерация ANTLR-парсеров | Работает | `grammars/`, `tools/antlr-4.13.2-complete.jar`, сгенерированный код закоммичен |
+| Генерация ANTLR-парсеров | Работает | `grammars/`, `tools/antlr-4.13.2-complete.jar`, сгенерированный код закоммичен в `src/WebDbViewer.Parsing.Grammars/Generated/` (при регенерации писать именно туда) |
 
 ## Фаза MVP (батч №1) — практически закрыта
 

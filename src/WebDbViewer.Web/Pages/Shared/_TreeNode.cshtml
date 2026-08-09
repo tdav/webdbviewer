@@ -10,6 +10,83 @@
     var dataUrl = isDataObject && node.Schema is not null
         ? $"/data/{Model.DsId}/{Uri.EscapeDataString(node.Schema)}/{Uri.EscapeDataString(node.Name)}{dbQuery}"
         : null;
+
+    // Атрибуты узла: у папок-категорий — русское название и счётчик, у объектов — уточнение
+    // (сигнатура перегрузки, таблица-владелец триггера и т.п.).
+    var attrs = node.Attributes;
+    string? Attr(string key) => attrs is not null && attrs.TryGetValue(key, out var v) && v.Length > 0 ? v : null;
+    var isFolder = Attr("kind") == "folder";
+    var isRoutine = node.Type is DbObjectType.Function or DbObjectType.Procedure or DbObjectType.Aggregate;
+    var label = isFolder ? Attr("title") ?? node.Name : node.Name;
+    var suffix = isFolder ? Attr("count")
+        : isRoutine ? "(" + (attrs is not null && attrs.TryGetValue("signature", out var s) ? s : "") + ")"
+        : Attr("table") ?? Attr("baseType") ?? Attr("typeKind") ?? Attr("provider");
+    var tipTitle = isFolder ? label : DbObjectIcons.Title(node.Type);
+
+    // Кнопка «показать DDL»: только у настоящих объектов схемы (не у папок-категорий,
+    // схем, баз и колонок) и только для типов, DDL которых умеет строить генератор.
+    var ddlType = isFolder || node.Schema is null ? null : DdlObjectTypes.ForApi(node.Type);
+
+    // qualifier отличает объект от одноимённых: таблица-владелец у триггера/правила/политики,
+    // сигнатура аргументов у перегруженной функции.
+    var qualifier = Attr("table") ?? (isRoutine && attrs is not null && attrs.TryGetValue("signature", out var qs) && qs.Length > 0 ? qs : null);
+    var scriptUrlBase = ddlType is null ? null : string.Concat(
+        "/editor?handler=DdlTab",
+        "&ds=", Model.DsId.ToString(),
+        "&schema=", Uri.EscapeDataString(node.Schema!),
+        "&name=", Uri.EscapeDataString(node.Name),
+        "&type=", ddlType,
+        qualifier is not null ? "&qualifier=" + Uri.EscapeDataString(qualifier) : "",
+        Model.Database is { Length: > 0 } ddlDb ? "&db=" + Uri.EscapeDataString(ddlDb) : "");
+
+    var ddlUrl = scriptUrlBase;
+    // Скрипт DROP не предлагается для датасорса «только чтение»: выполнить его там всё равно нельзя.
+    var dropUrl = scriptUrlBase is null || Model.ReadOnly ? null : scriptUrlBase + "&script=drop";
+}
+@* Кнопка DDL одинакова в обеих ветках разметки — вынесена в локальную функцию. *@
+@{
+    void RenderActions()
+    {
+        if (ddlUrl is null && dataUrl is null)
+            return;
+        <span class="tree-actions">
+            @if (dropUrl is not null)
+            {
+                <button type="button" class="tree-open-data tree-action-danger"
+                        hx-get="@dropUrl"
+                        @* Номер вкладки даёт wdvNextTabIndex (см. Editor/Index.cshtml): считать
+                           по количеству вкладок нельзя — после закрытия номера переиспользуются
+                           и id панелей начинают дублироваться. *@
+                        hx-vals='js:{index: window.wdvNextTabIndex ? window.wdvNextTabIndex() : 1}'
+                        hx-target="#editor-panes"
+                        hx-swap="beforeend"
+                        aria-label="Скрипт удаления: @node.Name"
+                        data-tip="Открыть скрипт DROP «@node.Name» во вкладке редактора (не выполняется)"
+                        onclick="event.stopPropagation()">@UiIcons.Trash</button>
+            }
+            @if (ddlUrl is not null)
+            {
+                <button type="button" class="tree-open-data"
+                        hx-get="@ddlUrl"
+                        @* Номер вкладки даёт wdvNextTabIndex (см. Editor/Index.cshtml): считать
+                           по количеству вкладок нельзя — после закрытия номера переиспользуются
+                           и id панелей начинают дублироваться. *@
+                        hx-vals='js:{index: window.wdvNextTabIndex ? window.wdvNextTabIndex() : 1}'
+                        hx-target="#editor-panes"
+                        hx-swap="beforeend"
+                        aria-label="Показать DDL: @node.Name"
+                        data-tip="Открыть DDL «@node.Name» во вкладке редактора"
+                        onclick="event.stopPropagation()">@UiIcons.Ddl</button>
+            }
+            @if (dataUrl is not null)
+            {
+                <a class="tree-open-data" href="@dataUrl"
+                   aria-label="Открыть данные: @node.Name"
+                   data-tip="Открыть данные таблицы «@node.Name»"
+                   onclick="event.stopPropagation()">@UiIcons.OpenData</a>
+            }
+        </span>
+    }
 }
 <li class="tree-node @(node.IsSystem ? "system" : null)" data-type="@node.Type" data-name="@node.Name" data-schema="@node.Schema" data-database="@Model.Database">
     @if (expandable)
@@ -25,34 +102,37 @@
               hx-target="closest li"
               hx-swap="beforeend"
               hx-include="#nav-hide-system"
-              title="@DbObjectIcons.Title(node.Type)@(node.Comment is not null ? " — " + node.Comment : "")">
+              title="@tipTitle@(node.Comment is not null ? " — " + node.Comment : "")">
             <span class="tree-toggle">&#9656;</span><span class="tree-icon">@DbObjectIcons.For(node.Type)</span>
-            <span class="tree-name">@node.Name</span>
-            @if (dataUrl is not null)
+            <span class="tree-name">@label</span>
+            @if (suffix is not null)
             {
-                <a class="tree-open-data" href="@dataUrl"
-                   aria-label="Открыть данные: @node.Name"
-                   data-tip="Открыть данные таблицы «@node.Name»"
-                   onclick="event.stopPropagation()">@UiIcons.OpenData</a>
+                <span class="tree-comment">@suffix</span>
             }
+            @{ RenderActions(); }
         </span>
     }
     else
     {
-        <span class="tree-label" title="@DbObjectIcons.Title(node.Type)@(node.Comment is not null ? " — " + node.Comment : "")">
+        <span class="tree-label" title="@tipTitle@(node.Comment is not null ? " — " + node.Comment : "")">
             <span class="tree-toggle"></span><span class="tree-icon">@DbObjectIcons.For(node.Type)</span>
             @if (dataUrl is not null)
             {
-                <a href="@dataUrl" class="tree-name" title="Открыть данные">@node.Name</a>
+                <a href="@dataUrl" class="tree-name" title="Открыть данные">@label</a>
             }
             else
             {
-                <span class="tree-name">@node.Name</span>
+                <span class="tree-name">@label</span>
             }
             @if (node.Schema is not null && Model.NoExpand)
             {
                 <span class="tree-comment">@node.Schema</span>
             }
+            else if (suffix is not null)
+            {
+                <span class="tree-comment">@suffix</span>
+            }
+            @{ RenderActions(); }
         </span>
     }
 </li>

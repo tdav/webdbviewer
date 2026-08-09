@@ -22,7 +22,11 @@ public static class DdlEndpoints
     // ---------------------------------------------------------------- GET /api/ddl?ds=&schema=&name=&type=
 
     /// <summary>
-    /// Текст DDL объекта. type: table | view | matview | index | function | procedure | package.
+    /// Текст DDL объекта. type: table | view | matview | index | function | procedure | package |
+    /// sequence | type | domain | foreigntable | aggregate | operator | collation | tsconfig |
+    /// tsdictionary | trigger | rule | policy.
+    /// qualifier уточняет объект среди одноимённых: таблица-владелец для trigger/rule/policy,
+    /// сигнатура аргументов для перегруженной функции.
     /// Ответ — text/plain (DDL) либо JSON с ошибкой.
     /// </summary>
     private static async Task<IResult> GetDdlAsync(
@@ -35,6 +39,7 @@ public static class DdlEndpoints
         string? name,
         string? type,
         string? db,
+        string? qualifier,
         CancellationToken ct)
     {
         if (ds == Guid.Empty || string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(type))
@@ -53,17 +58,7 @@ public static class DdlEndpoints
 
         try
         {
-            var ddl = type.ToLowerInvariant() switch
-            {
-                "table" => await generator.GetTableDdlAsync(session.Connection, schema, name, ct),
-                "view" or "matview" or "materializedview"
-                    => await generator.GetViewDdlAsync(session.Connection, schema, name, ct),
-                "index" => await generator.GetIndexDdlAsync(session.Connection, schema, name, ct),
-                "function" => await generator.GetRoutineDdlAsync(session.Connection, schema, name, DbObjectType.Function, ct),
-                "procedure" => await generator.GetRoutineDdlAsync(session.Connection, schema, name, DbObjectType.Procedure, ct),
-                "package" => await generator.GetRoutineDdlAsync(session.Connection, schema, name, DbObjectType.Package, ct),
-                _ => null,
-            };
+            var ddl = await DdlText.GetAsync(generator, session.Connection, schema, name, type, qualifier, ct);
 
             if (ddl is null)
                 return Results.BadRequest(new { error = $"Неизвестный тип объекта: «{type}»." });
@@ -73,6 +68,10 @@ public static class DdlEndpoints
         catch (DdlObjectNotFoundException ex)
         {
             return Results.NotFound(new { error = ex.Message });
+        }
+        catch (NotSupportedException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
         }
         catch (Exception ex) when (ex is System.Data.Common.DbException)
         {

@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WebDbViewer.Core\WebDbViewer.Core.csproj" />
+    <ProjectReference Include="..\WebDbViewer.Parsing.Grammars\WebDbViewer.Parsing.Grammars.csproj" />
   </ItemGroup>
 
   <ItemGroup>

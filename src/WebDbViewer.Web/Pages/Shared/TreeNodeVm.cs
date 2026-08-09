@@ -17,6 +17,42 @@ public sealed record TreeNodeVm
 
     /// <summary>true — узел нельзя раскрывать (результат поиска и т.п.).</summary>
     public bool NoExpand { get; init; }
+
+    /// <summary>
+    /// Датасорс открыт только для чтения. Скрывает действия, ведущие к записи;
+    /// сам запрет обеспечивает сессия (default_transaction_read_only), а не разметка.
+    /// </summary>
+    public bool ReadOnly { get; init; }
+}
+
+/// <summary>Соответствие типа объекта значению параметра <c>type</c> в /api/ddl и обработчике DdlTab.</summary>
+public static class DdlObjectTypes
+{
+    private static readonly Dictionary<DbObjectType, string> map = new()
+    {
+        [DbObjectType.Table] = "table",
+        [DbObjectType.View] = "view",
+        [DbObjectType.MaterializedView] = "matview",
+        [DbObjectType.Index] = "index",
+        [DbObjectType.Function] = "function",
+        [DbObjectType.Procedure] = "procedure",
+        [DbObjectType.Package] = "package",
+        [DbObjectType.Sequence] = "sequence",
+        [DbObjectType.Type] = "type",
+        [DbObjectType.Domain] = "domain",
+        [DbObjectType.ForeignTable] = "foreigntable",
+        [DbObjectType.Aggregate] = "aggregate",
+        [DbObjectType.Operator] = "operator",
+        [DbObjectType.Collation] = "collation",
+        [DbObjectType.TextSearchConfig] = "tsconfig",
+        [DbObjectType.TextSearchDictionary] = "tsdictionary",
+        [DbObjectType.Trigger] = "trigger",
+        [DbObjectType.Rule] = "rule",
+        [DbObjectType.Policy] = "policy",
+    };
+
+    /// <summary>Строковый тип для запроса DDL; null — для типа объекта DDL не генерируется.</summary>
+    public static string? ForApi(DbObjectType type) => map.GetValueOrDefault(type);
 }
 
 /// <summary>Иконки типов объектов БД для навигатора.</summary>
@@ -71,6 +107,24 @@ public static class DbObjectIcons
         [DbObjectType.Column] = Icon("<rect x='5.6' y='2.4' width='4.8' height='11.2' rx='1'/><path d='M5.6 6h4.8'/>"),
         // Замок — ограничение.
         [DbObjectType.Constraint] = Icon("<rect x='3.2' y='7' width='9.6' height='6.6' rx='1.2'/><path d='M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7'/>"),
+        // Сетка со стрелкой наружу — внешняя таблица (данные лежат на другом сервере).
+        [DbObjectType.ForeignTable] = Icon("<path d='M13.6 8.6V12a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h3.4'/><path d='M2.4 6.4h5.2'/><path d='M10 6h3.6V2.4'/><path d='M9.2 6.8 13.6 2.4'/>"),
+        // Воронка — агрегатная функция: множество строк сводится к одному значению.
+        [DbObjectType.Aggregate] = Icon("<path d='M2.2 2.8h11.6l-4.4 5.2v5.2l-2.8-1.6V8z'/>"),
+        // Ярлык с рамкой — домен: тип с ограничением.
+        [DbObjectType.Domain] = Icon("<path d='M7.4 2.4H13a.7.7 0 0 1 .7.7v5.4a.7.7 0 0 1-.2.5l-5.4 5.4a.7.7 0 0 1-1 0L2.4 9.3a.7.7 0 0 1 0-1l5.4-5.4a.7.7 0 0 1 .5-.2z'/><path d='M5.6 8.4 7.4 10.2l3.4-3.4'/>"),
+        // Плюс-минус — оператор.
+        [DbObjectType.Operator] = Icon("<circle cx='8' cy='8' r='6.1'/><path d='M4.6 6.2h3.2M6.2 4.6v3.2M8.6 10.6h3'/>"),
+        // Буквы с порядком — правило сортировки.
+        [DbObjectType.Collation] = Icon("<path d='M2.2 11.4 4.8 4.6l2.6 6.8'/><path d='M3 9.4h3.6'/><path d='M11.4 3.4v9.2'/><path d='M9.4 10.6 11.4 12.6 13.4 10.6'/>"),
+        // Щит — политика RLS.
+        [DbObjectType.Policy] = Icon("<path d='M8 1.9 13.2 3.6v4.1c0 3-2.1 5.2-5.2 6.4-3.1-1.2-5.2-3.4-5.2-6.4V3.6z'/><path d='m5.9 7.9 1.5 1.5 2.7-2.7'/>"),
+        // Стрелка с ветвлением — правило перезаписи.
+        [DbObjectType.Rule] = Icon("<path d='M2.4 4.2h4.2c2 0 2 7.6 4 7.6h3'/><path d='M11.6 9.6 14 11.8l-2.4 2.2'/><path d='M2.4 11.8h3.2'/>"),
+        // Лупа над текстом — конфигурация полнотекстового поиска.
+        [DbObjectType.TextSearchConfig] = Icon("<path d='M2.4 3.6h11.2M2.4 6.4h6.4M2.4 9.2h4'/><circle cx='10.4' cy='10.4' r='2.8'/><path d='m12.6 12.6 1.6 1.6'/>"),
+        // Книга — словарь полнотекстового поиска.
+        [DbObjectType.TextSearchDictionary] = Icon("<path d='M2.4 3.2a1 1 0 0 1 1-1H7a1.6 1.6 0 0 1 1.6 1.6v9.4A1.4 1.4 0 0 0 7.2 12H2.4z'/><path d='M13.6 3.2a1 1 0 0 0-1-1H9a1.6 1.6 0 0 0-1.6 1.6v9.4A1.4 1.4 0 0 1 8.8 12h4.8z'/>"),
     };
 
     private static readonly HtmlString fallbackIcon =
@@ -101,6 +155,15 @@ public static class DbObjectIcons
         DbObjectType.Tablespace => "Табличное пространство",
         DbObjectType.Column => "Колонка",
         DbObjectType.Constraint => "Ограничение",
+        DbObjectType.ForeignTable => "Внешняя таблица",
+        DbObjectType.Aggregate => "Агрегатная функция",
+        DbObjectType.Domain => "Домен",
+        DbObjectType.Operator => "Оператор",
+        DbObjectType.Collation => "Правило сортировки",
+        DbObjectType.Policy => "Политика RLS",
+        DbObjectType.Rule => "Правило перезаписи",
+        DbObjectType.TextSearchConfig => "Конфигурация полнотекстового поиска",
+        DbObjectType.TextSearchDictionary => "Словарь полнотекстового поиска",
         _ => type.ToString()
     };
 }

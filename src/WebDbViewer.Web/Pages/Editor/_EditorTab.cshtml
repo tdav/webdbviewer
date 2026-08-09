@@ -12,9 +12,17 @@
               data-ds-id="@(Model.DefaultDsId?.ToString() ?? "")"
               data-dialect="@(Model.DefaultDialect ?? "postgres")"
               data-grid-target="#results-grid"
-              placeholder="-- Введите SQL-запрос…&#10;-- Ctrl+Enter — выполнить, Alt+X — выполнить скрипт"></textarea>
+              placeholder="-- Введите SQL-запрос…&#10;-- Ctrl+Enter — выполнить, Alt+X — выполнить скрипт">@Model.Content</textarea>
 </div>
-<button type="button" class="editor-tab-btn" data-tab="@Model.TabId"
-        hx-swap-oob="beforeend:#editor-tabs-list">
-    Запрос @Model.Index <span class="editor-tab-close" title="Закрыть вкладку">&times;</span>
-</button>
+@* Кнопка вкладки. Обёртка обязательна: при hx-swap-oob со стратегией «beforeend:»
+   htmx вставляет в цель СОДЕРЖИМОЕ oob-элемента, а не его самого. Без обёртки в
+   список попадали голая подпись и крестик, кнопка вкладки не появлялась вовсе.
+   Разметка кнопки должна совпадать с Index.cshtml: подпись в .editor-tab-label
+   (она и обрезается многоточием), крестик — последний элемент кнопки. *@
+<div hx-swap-oob="beforeend:#editor-tabs-list">
+    <button type="button" class="editor-tab-btn" data-tab="@Model.TabId"
+            title="@(Model.Title ?? $"Запрос {Model.Index}")">
+        <span class="editor-tab-label">@(Model.Title ?? $"Запрос {Model.Index}")</span>
+        <span class="editor-tab-close" title="Закрыть вкладку" aria-hidden="true">&times;</span>
+    </button>
+</div>

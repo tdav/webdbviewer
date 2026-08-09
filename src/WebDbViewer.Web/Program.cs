@@ -130,6 +130,14 @@ try
     // ---------- Модули приложения ----------
     builder.Services.AddPostgresProvider();
     builder.Services.AddOracleProvider();
+
+    // Генераторы DDL (вкладка «DDL объекта», /api/ddl) и DML (inline-редактирование грида).
+    // Регистрация обязательна: без неё обработчики отвечают «генератор … не зарегистрирован».
+    builder.Services.AddPostgresDdl();
+    builder.Services.AddOracleDdl();
+    builder.Services.AddPostgresDmlGeneration();
+    builder.Services.AddOracleDmlGeneration();
+
     // Датасорсы и снапшоты метаданных берутся из метабазы (IDataSourceStore/ISnapshotStore уже зарегистрированы)
     builder.Services.AddDbSessions();
     builder.Services.AddMetadataCache();
@@ -196,6 +204,8 @@ try
     app.MapQueryApi();
     app.MapCompletionApi();
     app.MapAuditApi();
+    app.MapDdlApi();
+    app.MapDataEditApi();
 
     // Метабаза: создать схему/таблицы, перенести ключи Data Protection, завести первого администратора
     await app.Services.InitializePostgresMetaStoreAsync();

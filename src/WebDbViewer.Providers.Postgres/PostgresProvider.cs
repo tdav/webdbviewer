@@ -10,16 +10,37 @@ namespace WebDbViewer.Providers.Postgres;
 /// <summary>Провайдер PostgreSQL: Npgsql + интроспекция pg_catalog.</summary>
 public sealed partial class PostgresProvider : IDbProvider
 {
-    /// <summary>Категории («папки») дерева навигатора внутри схемы.</summary>
+    /// <summary>
+    /// Категории («папки») дерева навигатора внутри схемы. Порядок задаёт порядок отображения;
+    /// пустые категории в дерево не попадают (см. <see cref="GetCategoryNodesAsync"/>).
+    /// </summary>
     private static readonly (string Key, string Title, DbObjectType Type)[] Categories =
     [
         ("Tables", "Таблицы", DbObjectType.Table),
+        ("ForeignTables", "Внешние таблицы", DbObjectType.ForeignTable),
         ("Views", "Представления", DbObjectType.View),
         ("MaterializedViews", "Материализованные представления", DbObjectType.MaterializedView),
+        ("Indexes", "Индексы", DbObjectType.Index),
         ("Sequences", "Последовательности", DbObjectType.Sequence),
         ("Functions", "Функции", DbObjectType.Function),
         ("Procedures", "Процедуры", DbObjectType.Procedure),
+        ("Aggregates", "Агрегатные функции", DbObjectType.Aggregate),
+        ("Triggers", "Триггеры", DbObjectType.Trigger),
+        ("Types", "Типы", DbObjectType.Type),
+        ("Domains", "Домены", DbObjectType.Domain),
+        ("Operators", "Операторы", DbObjectType.Operator),
+        ("Collations", "Правила сортировки", DbObjectType.Collation),
+        ("TextSearchConfigs", "Конфигурации полнотекстового поиска", DbObjectType.TextSearchConfig),
+        ("TextSearchDictionaries", "Словари полнотекстового поиска", DbObjectType.TextSearchDictionary),
+        ("Policies", "Политики RLS", DbObjectType.Policy),
+        ("Rules", "Правила перезаписи", DbObjectType.Rule),
     ];
+
+    /// <summary>Категории, дети которых — колонки (остальные объекты в дереве листовые).</summary>
+    private static readonly HashSet<string> ColumnBearingCategories = new(StringComparer.Ordinal)
+    {
+        "Tables", "ForeignTables", "Views", "MaterializedViews",
+    };
 
     /// <summary>Зарезервированные слова PostgreSQL (минимально необходимый набор) — всегда квотируются.</summary>
     private static readonly HashSet<string> ReservedWords = new(StringComparer.Ordinal)
@@ -168,21 +189,15 @@ public sealed partial class PostgresProvider : IDbProvider
             case 0:
                 return await GetSchemaNodesAsync(connection, includeSystem, ct).ConfigureAwait(false);
             case 1:
-                // Внутри схемы — фиксированные категории.
-                return Categories
-                    .Select(c => new DbObjectNode
-                    {
-                        Name = c.Key,
-                        Type = c.Type,
-                        Schema = parentPath[0],
-                        HasChildren = true,
-                        Attributes = new Dictionary<string, string> { ["kind"] = "folder", ["title"] = c.Title },
-                    })
-                    .ToList();
+                // Внутри схемы — категории объектов (только непустые).
+                return await GetCategoryNodesAsync(connection, parentPath[0], ct).ConfigureAwait(false);
             case 2:
                 return await GetCategoryChildrenAsync(connection, parentPath[0], parentPath[1], ct).ConfigureAwait(false);
             case 3:
-                return await GetColumnNodesAsync(connection, parentPath[0], parentPath[2], ct).ConfigureAwait(false);
+                // Дети объекта — колонки; они есть только у отношений с колонками.
+                return ColumnBearingCategories.Contains(parentPath[1])
+                    ? await GetColumnNodesAsync(connection, parentPath[0], parentPath[2], ct).ConfigureAwait(false)
+                    : [];
             default:
                 return [];
         }
@@ -215,6 +230,71 @@ public sealed partial class PostgresProvider : IDbProvider
         return result;
     }
 
+    /// <summary>
+    /// Категории схемы с количеством объектов. Пустые категории пропускаются: иначе в каждой
+    /// схеме висело бы 18 папок, из которых заполнены две-три.
+    /// </summary>
+    private static async Task<IReadOnlyList<DbObjectNode>> GetCategoryNodesAsync(
+        DbConnection connection, string schema, CancellationToken ct)
+    {
+        var counts = new Dictionary<string, long>(StringComparer.Ordinal);
+        await using (var cmd = CreateCommand(connection, CategoryCountsSql, ("schema", schema)))
+        await using (var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                counts[reader.GetString(0)] = reader.GetInt64(1);
+        }
+
+        var result = new List<DbObjectNode>();
+        foreach (var (key, title, type) in Categories)
+        {
+            if (!counts.TryGetValue(key, out var count) || count == 0)
+                continue;
+
+            result.Add(new DbObjectNode
+            {
+                Name = key,
+                Type = type,
+                Schema = schema,
+                HasChildren = true,
+                Attributes = new Dictionary<string, string>
+                {
+                    ["kind"] = "folder",
+                    ["title"] = title,
+                    ["count"] = count.ToString(),
+                },
+            });
+        }
+        return result;
+    }
+
+    /// <summary>Один запрос на все категории схемы: (ключ категории, количество объектов).</summary>
+    private const string CategoryCountsSql = """
+        WITH s AS (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = @schema)
+        SELECT 'Tables' AS cat, count(*) AS cnt FROM pg_catalog.pg_class c, s WHERE c.relnamespace = s.oid AND c.relkind IN ('r','p')
+        UNION ALL SELECT 'ForeignTables', count(*) FROM pg_catalog.pg_class c, s WHERE c.relnamespace = s.oid AND c.relkind = 'f'
+        UNION ALL SELECT 'Views', count(*) FROM pg_catalog.pg_class c, s WHERE c.relnamespace = s.oid AND c.relkind = 'v'
+        UNION ALL SELECT 'MaterializedViews', count(*) FROM pg_catalog.pg_class c, s WHERE c.relnamespace = s.oid AND c.relkind = 'm'
+        UNION ALL SELECT 'Indexes', count(*) FROM pg_catalog.pg_class c, s WHERE c.relnamespace = s.oid AND c.relkind IN ('i','I')
+        UNION ALL SELECT 'Sequences', count(*) FROM pg_catalog.pg_class c, s WHERE c.relnamespace = s.oid AND c.relkind = 'S'
+        UNION ALL SELECT 'Functions', count(*) FROM pg_catalog.pg_proc p, s WHERE p.pronamespace = s.oid AND p.prokind = 'f'
+        UNION ALL SELECT 'Procedures', count(*) FROM pg_catalog.pg_proc p, s WHERE p.pronamespace = s.oid AND p.prokind = 'p'
+        UNION ALL SELECT 'Aggregates', count(*) FROM pg_catalog.pg_proc p, s WHERE p.pronamespace = s.oid AND p.prokind = 'a'
+        UNION ALL SELECT 'Triggers', count(*) FROM pg_catalog.pg_trigger t
+            JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid, s WHERE c.relnamespace = s.oid AND NOT t.tgisinternal
+        UNION ALL SELECT 'Types', count(*) FROM pg_catalog.pg_type t, s WHERE t.typnamespace = s.oid AND t.typtype IN ('e','c','r')
+            AND (t.typrelid = 0 OR (SELECT c.relkind FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid) = 'c')
+        UNION ALL SELECT 'Domains', count(*) FROM pg_catalog.pg_type t, s WHERE t.typnamespace = s.oid AND t.typtype = 'd'
+        UNION ALL SELECT 'Operators', count(*) FROM pg_catalog.pg_operator o, s WHERE o.oprnamespace = s.oid
+        UNION ALL SELECT 'Collations', count(*) FROM pg_catalog.pg_collation cl, s WHERE cl.collnamespace = s.oid
+        UNION ALL SELECT 'TextSearchConfigs', count(*) FROM pg_catalog.pg_ts_config tc, s WHERE tc.cfgnamespace = s.oid
+        UNION ALL SELECT 'TextSearchDictionaries', count(*) FROM pg_catalog.pg_ts_dict td, s WHERE td.dictnamespace = s.oid
+        UNION ALL SELECT 'Policies', count(*) FROM pg_catalog.pg_policy pl
+            JOIN pg_catalog.pg_class c ON c.oid = pl.polrelid, s WHERE c.relnamespace = s.oid
+        UNION ALL SELECT 'Rules', count(*) FROM pg_catalog.pg_rewrite r
+            JOIN pg_catalog.pg_class c ON c.oid = r.ev_class, s WHERE c.relnamespace = s.oid AND r.rulename <> '_RETURN'
+        """;
+
     private async Task<IReadOnlyList<DbObjectNode>> GetCategoryChildrenAsync(
         DbConnection connection, string schema, string category, CancellationToken ct)
     {
@@ -222,19 +302,179 @@ public sealed partial class PostgresProvider : IDbProvider
         {
             case "Tables":
                 return await QueryRelationsAsync(connection, schema, "('r','p')", DbObjectType.Table, hasChildren: true, ct).ConfigureAwait(false);
+            case "ForeignTables":
+                return await QueryRelationsAsync(connection, schema, "('f')", DbObjectType.ForeignTable, hasChildren: true, ct).ConfigureAwait(false);
             case "Views":
                 return await QueryRelationsAsync(connection, schema, "('v')", DbObjectType.View, hasChildren: true, ct).ConfigureAwait(false);
             case "MaterializedViews":
                 return await QueryRelationsAsync(connection, schema, "('m')", DbObjectType.MaterializedView, hasChildren: true, ct).ConfigureAwait(false);
+            case "Indexes":
+                return await QueryRelationsAsync(connection, schema, "('i','I')", DbObjectType.Index, hasChildren: false, ct).ConfigureAwait(false);
             case "Sequences":
                 return await QueryRelationsAsync(connection, schema, "('S')", DbObjectType.Sequence, hasChildren: false, ct).ConfigureAwait(false);
             case "Functions":
                 return await QueryRoutineNodesAsync(connection, schema, "f", DbObjectType.Function, ct).ConfigureAwait(false);
             case "Procedures":
                 return await QueryRoutineNodesAsync(connection, schema, "p", DbObjectType.Procedure, ct).ConfigureAwait(false);
+            case "Aggregates":
+                return await QueryRoutineNodesAsync(connection, schema, "a", DbObjectType.Aggregate, ct).ConfigureAwait(false);
+            case "Triggers":
+                return await QueryOwnedObjectsAsync(connection, schema, TriggersSql, DbObjectType.Trigger, ct).ConfigureAwait(false);
+            case "Policies":
+                return await QueryOwnedObjectsAsync(connection, schema, PoliciesSql, DbObjectType.Policy, ct).ConfigureAwait(false);
+            case "Rules":
+                return await QueryOwnedObjectsAsync(connection, schema, RulesSql, DbObjectType.Rule, ct).ConfigureAwait(false);
+            case "Types":
+                return await QuerySimpleObjectsAsync(connection, schema, TypesSql, DbObjectType.Type, "typeKind", ct).ConfigureAwait(false);
+            case "Domains":
+                return await QuerySimpleObjectsAsync(connection, schema, DomainsSql, DbObjectType.Domain, "baseType", ct).ConfigureAwait(false);
+            case "Operators":
+                return await QuerySimpleObjectsAsync(connection, schema, OperatorsSql, DbObjectType.Operator, "arguments", ct).ConfigureAwait(false);
+            case "Collations":
+                return await QuerySimpleObjectsAsync(connection, schema, CollationsSql, DbObjectType.Collation, "provider", ct).ConfigureAwait(false);
+            case "TextSearchConfigs":
+                return await QuerySimpleObjectsAsync(connection, schema, TextSearchConfigsSql, DbObjectType.TextSearchConfig, null, ct).ConfigureAwait(false);
+            case "TextSearchDictionaries":
+                return await QuerySimpleObjectsAsync(connection, schema, TextSearchDictionariesSql, DbObjectType.TextSearchDictionary, null, ct).ConfigureAwait(false);
             default:
                 return [];
         }
+    }
+
+    // Запросы объектов, чьё имя уникально только внутри таблицы-владельца:
+    // возвращают (имя, комментарий, имя таблицы).
+    private const string TriggersSql = """
+        SELECT t.tgname, obj_description(t.oid, 'pg_trigger'), c.relname
+        FROM pg_catalog.pg_trigger t
+        JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = @schema AND NOT t.tgisinternal
+        ORDER BY c.relname, t.tgname
+        """;
+
+    private const string PoliciesSql = """
+        SELECT pl.polname, NULL::text, c.relname
+        FROM pg_catalog.pg_policy pl
+        JOIN pg_catalog.pg_class c ON c.oid = pl.polrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = @schema
+        ORDER BY c.relname, pl.polname
+        """;
+
+    private const string RulesSql = """
+        SELECT r.rulename, NULL::text, c.relname
+        FROM pg_catalog.pg_rewrite r
+        JOIN pg_catalog.pg_class c ON c.oid = r.ev_class
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = @schema AND r.rulename <> '_RETURN'
+        ORDER BY c.relname, r.rulename
+        """;
+
+    // Запросы объектов, чьё имя уникально внутри схемы: (имя, комментарий, доп. атрибут).
+    private const string TypesSql = """
+        SELECT t.typname, obj_description(t.oid, 'pg_type'),
+               CASE t.typtype WHEN 'e' THEN 'перечисление' WHEN 'c' THEN 'составной' WHEN 'r' THEN 'диапазон' END
+        FROM pg_catalog.pg_type t
+        JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname = @schema AND t.typtype IN ('e','c','r')
+          AND (t.typrelid = 0 OR (SELECT c.relkind FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid) = 'c')
+        ORDER BY t.typname
+        """;
+
+    private const string DomainsSql = """
+        SELECT t.typname, obj_description(t.oid, 'pg_type'),
+               pg_catalog.format_type(t.typbasetype, t.typtypmod)
+        FROM pg_catalog.pg_type t
+        JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname = @schema AND t.typtype = 'd'
+        ORDER BY t.typname
+        """;
+
+    private const string OperatorsSql = """
+        SELECT o.oprname, obj_description(o.oid, 'pg_operator'),
+               concat_ws(', ',
+                   CASE WHEN o.oprleft  = 0 THEN NULL ELSE pg_catalog.format_type(o.oprleft,  NULL) END,
+                   CASE WHEN o.oprright = 0 THEN NULL ELSE pg_catalog.format_type(o.oprright, NULL) END)
+        FROM pg_catalog.pg_operator o
+        JOIN pg_catalog.pg_namespace n ON n.oid = o.oprnamespace
+        WHERE n.nspname = @schema
+        ORDER BY o.oprname
+        """;
+
+    private const string CollationsSql = """
+        SELECT cl.collname, obj_description(cl.oid, 'pg_collation'),
+               CASE cl.collprovider WHEN 'c' THEN 'libc' WHEN 'i' THEN 'icu' WHEN 'b' THEN 'builtin' ELSE cl.collprovider::text END
+        FROM pg_catalog.pg_collation cl
+        JOIN pg_catalog.pg_namespace n ON n.oid = cl.collnamespace
+        WHERE n.nspname = @schema
+        ORDER BY cl.collname
+        """;
+
+    private const string TextSearchConfigsSql = """
+        SELECT tc.cfgname, obj_description(tc.oid, 'pg_ts_config'), NULL::text
+        FROM pg_catalog.pg_ts_config tc
+        JOIN pg_catalog.pg_namespace n ON n.oid = tc.cfgnamespace
+        WHERE n.nspname = @schema
+        ORDER BY tc.cfgname
+        """;
+
+    private const string TextSearchDictionariesSql = """
+        SELECT td.dictname, obj_description(td.oid, 'pg_ts_dict'), NULL::text
+        FROM pg_catalog.pg_ts_dict td
+        JOIN pg_catalog.pg_namespace n ON n.oid = td.dictnamespace
+        WHERE n.nspname = @schema
+        ORDER BY td.dictname
+        """;
+
+    /// <summary>
+    /// Объекты, принадлежащие таблице (триггеры, политики, правила). Имя такого объекта
+    /// уникально лишь в пределах таблицы, поэтому владелец кладётся в атрибут «table»
+    /// — без него нельзя ни отличить одноимённые узлы, ни запросить их DDL.
+    /// </summary>
+    private static async Task<IReadOnlyList<DbObjectNode>> QueryOwnedObjectsAsync(
+        DbConnection connection, string schema, string sql, DbObjectType type, CancellationToken ct)
+    {
+        var result = new List<DbObjectNode>();
+        await using var cmd = CreateCommand(connection, sql, ("schema", schema));
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            result.Add(new DbObjectNode
+            {
+                Name = reader.GetString(0),
+                Type = type,
+                Schema = schema,
+                HasChildren = false,
+                Comment = reader.IsDBNull(1) ? null : reader.GetString(1),
+                Attributes = new Dictionary<string, string> { ["table"] = reader.GetString(2) },
+            });
+        }
+        return result;
+    }
+
+    /// <summary>Объекты схемы вида (имя, комментарий, доп. атрибут). attributeName = null — атрибут не нужен.</summary>
+    private static async Task<IReadOnlyList<DbObjectNode>> QuerySimpleObjectsAsync(
+        DbConnection connection, string schema, string sql, DbObjectType type, string? attributeName, CancellationToken ct)
+    {
+        var result = new List<DbObjectNode>();
+        await using var cmd = CreateCommand(connection, sql, ("schema", schema));
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            var extra = reader.IsDBNull(2) ? null : reader.GetString(2);
+            result.Add(new DbObjectNode
+            {
+                Name = reader.GetString(0),
+                Type = type,
+                Schema = schema,
+                HasChildren = false,
+                Comment = reader.IsDBNull(1) ? null : reader.GetString(1),
+                Attributes = attributeName is not null && extra is { Length: > 0 }
+                    ? new Dictionary<string, string> { [attributeName] = extra }
+                    : null,
+            });
+        }
+        return result;
     }
 
     private static async Task<IReadOnlyList<DbObjectNode>> QueryRelationsAsync(
@@ -269,14 +509,17 @@ public sealed partial class PostgresProvider : IDbProvider
     private static async Task<IReadOnlyList<DbObjectNode>> QueryRoutineNodesAsync(
         DbConnection connection, string schema, string prokind, DbObjectType type, CancellationToken ct)
     {
+        // signature — типы аргументов (pg_get_function_identity_arguments): единственное, что
+        // различает перегрузки, поэтому оно и показывается рядом с именем в дереве.
         var sql = """
             SELECT p.proname,
                    pg_catalog.pg_get_function_arguments(p.oid) AS args,
-                   obj_description(p.oid, 'pg_proc') AS comment
+                   obj_description(p.oid, 'pg_proc') AS comment,
+                   pg_catalog.pg_get_function_identity_arguments(p.oid) AS signature
             FROM pg_catalog.pg_proc p
             JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
             WHERE n.nspname = @schema AND p.prokind = @prokind
-            ORDER BY p.proname
+            ORDER BY p.proname, signature
             """;
 
         var result = new List<DbObjectNode>();
@@ -284,14 +527,18 @@ public sealed partial class PostgresProvider : IDbProvider
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            var args = reader.IsDBNull(1) ? null : reader.GetString(1);
+            var attributes = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (!reader.IsDBNull(1))
+                attributes["arguments"] = reader.GetString(1);
+            attributes["signature"] = reader.IsDBNull(3) ? "" : reader.GetString(3);
+
             result.Add(new DbObjectNode
             {
                 Name = reader.GetString(0),
                 Type = type,
                 Schema = schema,
                 Comment = reader.IsDBNull(2) ? null : reader.GetString(2),
-                Attributes = args is null ? null : new Dictionary<string, string> { ["arguments"] = args },
+                Attributes = attributes,
             });
         }
         return result;
@@ -542,13 +789,25 @@ public sealed partial class PostgresProvider : IDbProvider
 
     public async Task<string> GetSchemaVersionAsync(DbConnection connection, string schemaName, CancellationToken ct)
     {
-        // Дешёвая версия DDL-состояния схемы: количество отношений + максимальный xmin строк pg_class.
+        // Дешёвая версия DDL-состояния схемы: количество объектов + максимальный xmin их строк.
+        // Учитываются все каталоги, объекты которых показывает дерево, — иначе создание типа,
+        // функции или триггера не сбрасывало бы кэш метаданных.
         var sql = """
+            WITH s AS (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = @schema),
+            objects AS (
+                SELECT c.xmin FROM pg_catalog.pg_class c, s WHERE c.relnamespace = s.oid
+                UNION ALL
+                SELECT p.xmin FROM pg_catalog.pg_proc p, s WHERE p.pronamespace = s.oid
+                UNION ALL
+                SELECT t.xmin FROM pg_catalog.pg_type t, s WHERE t.typnamespace = s.oid
+                UNION ALL
+                SELECT tg.xmin FROM pg_catalog.pg_trigger tg
+                    JOIN pg_catalog.pg_class tc ON tc.oid = tg.tgrelid, s
+                    WHERE tc.relnamespace = s.oid AND NOT tg.tgisinternal
+            )
             SELECT count(*)::bigint AS cnt,
-                   coalesce(max(c.xmin::text::bigint), 0) AS max_xmin
-            FROM pg_catalog.pg_class c
-            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = @schema
+                   coalesce(max(xmin::text::bigint), 0) AS max_xmin
+            FROM objects
             """;
 
         await using var cmd = CreateCommand(connection, sql, ("schema", schemaName));

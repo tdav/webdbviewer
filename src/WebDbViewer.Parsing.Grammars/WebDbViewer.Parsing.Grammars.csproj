@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Проект содержит только сгенерированный ANTLR-код (grammars/*.g4 -> Generated/).
+    Он намеренно не ссылается ни на один проект решения: любая правка в WebDbViewer.Core
+    или в самом WebDbViewer.Parsing не должна приводить к перекомпиляции PlSqlParser.cs
+    (265 000 строк, ~40 с компиляции). Регенерация выполняется вручную из grammars/.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <!-- Сгенерированный код не правится вручную — его предупреждения только шумят в логе сборки. -->
+    <NoWarn>$(NoWarn);CS0108;CS0162;CS0219;CS1591;CS3021;CS8981</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Antlr4.Runtime.Standard" Version="4.13.1" />
+  </ItemGroup>
+
+</Project>

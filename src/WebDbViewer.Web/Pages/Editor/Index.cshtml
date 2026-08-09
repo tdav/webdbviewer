@@ -48,6 +48,7 @@
                             {
                                 DsId = ds.Id,
                                 Path = "",
+                                ReadOnly = ds.ReadOnly,
                                 Node = new DbObjectNode
                                 {
                                     Name = ds.Name,
@@ -69,14 +70,19 @@
     <div class="editor-and-results">
         <section class="editor-panel">
             <div class="editor-tabs-bar">
-                <div id="editor-tabs-list" style="display:flex;gap:2px">
-                    <button type="button" class="editor-tab-btn active" data-tab="tab-1">Запрос 1</button>
+                @* Разметка вкладки должна совпадать с _EditorTab.cshtml: подпись в .editor-tab-label
+                   (она и обрезается многоточием), крестик — последний элемент кнопки. *@
+                <div id="editor-tabs-list">
+                    <button type="button" class="editor-tab-btn active" data-tab="tab-1" title="Запрос 1">
+                        <span class="editor-tab-label">Запрос 1</span>
+                        <span class="editor-tab-close" title="Закрыть вкладку" aria-hidden="true">&times;</span>
+                    </button>
                 </div>
                 <button type="button" class="btn btn-ghost btn-sm btn-icon"
                         aria-label="Новая вкладка"
                         data-tip="Открыть ещё одну вкладку запроса"
                         hx-get="/editor?handler=Tab"
-                        hx-vals='js:{index: document.querySelectorAll("#editor-tabs-list .editor-tab-btn").length + 1}'
+                        hx-vals='js:{index: window.wdvNextTabIndex ? window.wdvNextTabIndex() : 1}'
                         hx-target="#editor-panes"
                         hx-swap="beforeend">@UiIcons.Plus</button>
                 <span class="htmx-indicator">…</span>
@@ -180,6 +186,18 @@
 
 @section Scripts {
     <script>
+        // Номер новой вкладки: максимальный существующий + 1. По количеству вкладок
+        // считать нельзя — после закрытия номера переиспользуются, и новая панель
+        // получает id уже открытой (две вкладки с одним data-tab, обе «активные»).
+        window.wdvNextTabIndex = function () {
+            var max = 0;
+            document.querySelectorAll("#editor-panes .editor-pane, #editor-tabs-list .editor-tab-btn").forEach(function (el) {
+                var n = parseInt(String(el.id || el.dataset.tab || "").replace("tab-", ""), 10);
+                if (n > max) max = n;
+            });
+            return max + 1;
+        };
+
         // Переключение вкладок редактора (делегирование на панели вкладок)
         (function () {
             var tabsList = document.getElementById("editor-tabs-list");
@@ -187,7 +205,11 @@
 
             function activate(tabId) {
                 tabsList.querySelectorAll(".editor-tab-btn").forEach(function (b) {
-                    b.classList.toggle("active", b.dataset.tab === tabId);
+                    var isActive = b.dataset.tab === tabId;
+                    b.classList.toggle("active", isActive);
+                    // Полоса прокрутки списка скрыта, поэтому активную вкладку
+                    // подтягиваем в видимую область сами.
+                    if (isActive) b.scrollIntoView({ inline: "nearest", block: "nearest" });
                 });
                 panes.querySelectorAll(".editor-pane").forEach(function (p) {
                     p.classList.toggle("active", p.id === tabId);
@@ -195,17 +217,31 @@
                 document.dispatchEvent(new CustomEvent("wdv:tab-activated", { detail: { tabId: tabId } }));
             }
 
+            // Полоса прокрутки списка скрыта (иначе панель прыгает по высоте),
+            // а вертикальное колесо горизонтальный контейнер не прокручивает —
+            // переводим его в горизонтальную прокрутку сами.
+            tabsList.addEventListener("wheel", function (e) {
+                if (e.deltaY === 0 || tabsList.scrollWidth <= tabsList.clientWidth) return;
+                tabsList.scrollLeft += e.deltaY;
+                e.preventDefault();
+            }, { passive: false });
+
             tabsList.addEventListener("click", function (e) {
                 var btn = e.target.closest(".editor-tab-btn");
                 if (!btn) return;
                 if (e.target.classList.contains("editor-tab-close")) {
-                    // Закрытие вкладки
+                    // Закрытие вкладки. Последнюю не закрываем: редактор без единой вкладки
+                    // оставляет страницу пустой, а создать новую можно только кнопкой «+».
+                    if (tabsList.querySelectorAll(".editor-tab-btn").length < 2) return;
                     var tabId = btn.dataset.tab;
+                    var wasActive = btn.classList.contains("active");
+                    // Соседняя вкладка справа, иначе слева — закрытие не должно
+                    // перебрасывать пользователя в начало списка.
+                    var neighbour = btn.nextElementSibling || btn.previousElementSibling;
                     var pane = document.getElementById(tabId);
                     if (pane) pane.remove();
                     btn.remove();
-                    var first = tabsList.querySelector(".editor-tab-btn");
-                    if (first) activate(first.dataset.tab);
+                    if (wasActive && neighbour) activate(neighbour.dataset.tab);
                     return;
                 }
                 activate(btn.dataset.tab);

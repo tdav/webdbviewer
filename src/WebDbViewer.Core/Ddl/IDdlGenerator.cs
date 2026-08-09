@@ -25,6 +25,28 @@ public interface IDdlGenerator
 
     /// <summary>DDL функции/процедуры/пакета. routineType уточняет вид объекта (Function/Procedure/Package).</summary>
     Task<string> GetRoutineDdlAsync(DbConnection connection, string schema, string routine, DbObjectType routineType, CancellationToken ct);
+
+    /// <summary>
+    /// DDL остальных объектов схемы: последовательность, тип, домен, триггер, правило,
+    /// политика RLS, агрегат, оператор, правило сортировки, объекты полнотекстового поиска.
+    /// <paramref name="owner"/> — таблица-владелец для объектов, чьё имя уникально лишь внутри
+    /// таблицы (триггер, правило, политика); для прочих типов игнорируется.
+    /// Диалекты, не поддерживающие тип объекта, бросают <see cref="NotSupportedException"/>.
+    /// </summary>
+    Task<string> GetObjectDdlAsync(
+        DbConnection connection, string schema, string name, DbObjectType type, string? owner, CancellationToken ct)
+        => throw new NotSupportedException($"DDL объектов типа «{type}» для диалекта «{Kind}» не поддерживается.");
+
+    /// <summary>
+    /// Скрипт удаления объекта. Возвращает текст оператора; выполнять его — задача вызывающего
+    /// (в UI скрипт открывается во вкладке редактора, а не запускается автоматически).
+    /// CASCADE не добавляется никогда: каскадное удаление должно быть осознанным решением автора скрипта.
+    /// <paramref name="qualifier"/> уточняет объект среди одноимённых: таблица-владелец для
+    /// триггера/правила/политики, сигнатура аргументов для функции/процедуры/агрегата.
+    /// </summary>
+    Task<string> GetDropScriptAsync(
+        DbConnection connection, string schema, string name, DbObjectType type, string? qualifier, CancellationToken ct)
+        => throw new NotSupportedException($"Скрипт удаления объектов типа «{type}» для диалекта «{Kind}» не поддерживается.");
 }
 
 /// <summary>Объект не найден в каталоге БД (для HTTP-слоя транслируется в 404).</summary>

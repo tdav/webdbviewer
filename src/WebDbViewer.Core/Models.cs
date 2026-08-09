@@ -36,7 +36,10 @@ public sealed record DataSourceConfig
 public enum DbObjectType
 {
     Database, Schema, Table, View, MaterializedView, Sequence, Function, Procedure,
-    Package, Type, Extension, Index, Trigger, Synonym, DbLink, Tablespace, Column, Constraint
+    Package, Type, Extension, Index, Trigger, Synonym, DbLink, Tablespace, Column, Constraint,
+    // Добавлены для полного покрытия объектов PostgreSQL.
+    ForeignTable, Aggregate, Domain, Operator, Collation, Policy, Rule,
+    TextSearchConfig, TextSearchDictionary
 }
 
 /// <summary>Узел дерева объектов.</summary>
