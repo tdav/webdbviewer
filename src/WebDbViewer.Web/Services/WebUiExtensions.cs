@@ -4,7 +4,7 @@ using WebDbViewer.Metadata;
 using WebDbViewer.Web.Security;
 using WebDbViewer.Web.Services;
 
-namespace WebDbViewer.Web;
+namespace DbViewer.App.Services;
 
 /// <summary>DI-регистрация сервисов веб-слоя (UI).</summary>
 public static class WebUiExtensions
