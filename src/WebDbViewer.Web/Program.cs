@@ -130,6 +130,9 @@ try
     // ---------- Модули приложения ----------
     builder.Services.AddPostgresProvider();
     builder.Services.AddOracleProvider();
+    // Генераторы DDL: исходники объектов для вкладки редактора и /api/ddl
+    builder.Services.AddPostgresDdl();
+    builder.Services.AddOracleDdl();
     // Датасорсы и снапшоты метаданных берутся из метабазы (IDataSourceStore/ISnapshotStore уже зарегистрированы)
     builder.Services.AddDbSessions();
     builder.Services.AddMetadataCache();
@@ -194,6 +197,7 @@ try
     app.MapRazorPages();
 
     app.MapQueryApi();
+    app.MapDdlApi();
     app.MapCompletionApi();
     app.MapAuditApi();
 

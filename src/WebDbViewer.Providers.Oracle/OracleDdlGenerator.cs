@@ -34,30 +34,25 @@ public sealed class OracleDdlGenerator : IDdlGenerator
     public Task<string> GetIndexDdlAsync(DbConnection connection, string schema, string index, CancellationToken ct)
         => GetMetadataDdlAsync(connection, "INDEX", schema, index, ct);
 
-    public async Task<string> GetRoutineDdlAsync(
+    /// <summary>
+    /// Исходник PL/SQL-объекта из ALL_SOURCE, а не из DBMS_METADATA: текст получается ровно таким,
+    /// каким его компилировали, не требует SELECT_CATALOG_ROLE и разделён «/» — то есть пригоден
+    /// и для просмотра, и для правки с последующим выполнением в редакторе.
+    /// </summary>
+    public Task<string> GetRoutineDdlAsync(
         DbConnection connection, string schema, string routine, DbObjectType routineType, CancellationToken ct)
     {
-        var metadataType = routineType switch
+        // Спецификация и тело — отдельные объекты словаря; в редакторе нужны оба, спецификация первой.
+        string[] sourceTypes = routineType switch
         {
-            DbObjectType.Procedure => "PROCEDURE",
-            DbObjectType.Package => "PACKAGE",
-            _ => "FUNCTION",
+            DbObjectType.Procedure => ["PROCEDURE"],
+            DbObjectType.Package => ["PACKAGE", "PACKAGE BODY"],
+            DbObjectType.Type => ["TYPE", "TYPE BODY"],
+            DbObjectType.Trigger => ["TRIGGER"],
+            _ => ["FUNCTION"],
         };
 
-        if (routineType == DbObjectType.Package)
-        {
-            // DBMS_METADATA для пакетов часто недоступен (нет SELECT_CATALOG_ROLE) — fallback на ALL_SOURCE.
-            try
-            {
-                return await GetMetadataDdlAsync(connection, metadataType, schema, routine, ct).ConfigureAwait(false);
-            }
-            catch (OracleException)
-            {
-                return await GetPackageFromAllSourceAsync(connection, schema, routine, ct).ConfigureAwait(false);
-            }
-        }
-
-        return await GetMetadataDdlAsync(connection, metadataType, schema, routine, ct).ConfigureAwait(false);
+        return GetSourceAsync(connection, schema, routine, sourceTypes, ct);
     }
 
     // ---------------------------------------------------------------- DBMS_METADATA
@@ -88,46 +83,77 @@ public sealed class OracleDdlGenerator : IDdlGenerator
         }
     }
 
-    // ---------------------------------------------------------------- Fallback: ALL_SOURCE (пакеты)
+    // ---------------------------------------------------------------- ALL_SOURCE
 
-    private static async Task<string> GetPackageFromAllSourceAsync(
-        DbConnection connection, string schema, string package, CancellationToken ct)
+    /// <summary>
+    /// Собирает исходник из ALL_SOURCE. Секции (спецификация, тело) идут в порядке
+    /// <paramref name="sourceTypes"/>, каждая получает «CREATE OR REPLACE» и терминатор «/»:
+    /// без него сплиттер редактора не отличит конец PL/SQL-блока от «;» внутри него.
+    /// </summary>
+    private static async Task<string> GetSourceAsync(
+        DbConnection connection, string schema, string name, string[] sourceTypes, CancellationToken ct)
     {
-        const string sql = """
+        // Порядок секций задаётся списком типов, а не алфавитом: тело всегда после спецификации.
+        var order = string.Join(" ", sourceTypes.Select((t, i) => $"WHEN '{t}' THEN {i}"));
+        var types = string.Join(", ", sourceTypes.Select((_, i) => $":t{i}"));
+        var sql = $"""
             SELECT type, line, text
             FROM all_source
-            WHERE owner = :owner AND name = :name AND type IN ('PACKAGE', 'PACKAGE BODY')
-            ORDER BY CASE type WHEN 'PACKAGE' THEN 0 ELSE 1 END, line
+            WHERE owner = :owner AND name = :name AND type IN ({types})
+            ORDER BY CASE type {order} END, line
             """;
 
-        await using var cmd = CreateCommand(connection, sql,
-            ("owner", Normalize(schema)), ("name", Normalize(package)));
+        var parameters = new List<(string, object?)>
+        {
+            ("owner", Normalize(schema)),
+            ("name", Normalize(name)),
+        };
+        parameters.AddRange(sourceTypes.Select((t, i) => ($"t{i}", (object?)t)));
 
-        var sb = new StringBuilder();
-        string? currentType = null;
+        await using var cmd = CreateCommand(connection, sql, [.. parameters]);
+
+        // Секции копим отдельно: заголовок каждой дописывается уже по собранному тексту.
+        var sections = new List<(string Type, StringBuilder Text)>();
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var type = reader.GetString(0);
-            if (!string.Equals(type, currentType, StringComparison.Ordinal))
-            {
-                // Новая секция (спецификация → тело): CREATE OR REPLACE + разделитель "/".
-                if (currentType is not null)
-                    sb.Append("/\n\n");
-                sb.Append("CREATE OR REPLACE ");
-                currentType = type;
-            }
+            if (sections.Count == 0 || !string.Equals(sections[^1].Type, type, StringComparison.Ordinal))
+                sections.Add((type, new StringBuilder()));
             if (!reader.IsDBNull(2))
-                sb.Append(reader.GetString(2));
+                sections[^1].Text.Append(reader.GetString(2));
         }
 
-        if (sb.Length == 0)
-            throw new DdlObjectNotFoundException($"Пакет «{schema}.{package}» не найден.");
+        if (sections.Count == 0)
+            throw new DdlObjectNotFoundException($"Исходник «{schema}.{name}» не найден.");
 
-        if (sb[^1] != '\n')
-            sb.Append('\n');
-        sb.Append("/\n");
+        var sb = new StringBuilder();
+        foreach (var (type, text) in sections)
+        {
+            sb.Append(BuildCreateHeader(type, Normalize(schema), text.ToString().TrimEnd()));
+            sb.Append("\n/\n\n");
+        }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Достраивает «CREATE OR REPLACE» к тексту из ALL_SOURCE и квалифицирует имя схемой.
+    /// Без схемы CREATE ушёл бы в схему подключённого пользователя — объект тихо создался бы не там.
+    /// </summary>
+    private static string BuildCreateHeader(string sourceType, string owner, string body)
+    {
+        // Текст секции начинается с тех же ключевых слов, что и её тип: «PACKAGE BODY   ИМЯ …».
+        var pos = 0;
+        foreach (var word in sourceType.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            while (pos < body.Length && char.IsWhiteSpace(body[pos]))
+                pos++;
+            if (string.Compare(body, pos, word, 0, word.Length, StringComparison.OrdinalIgnoreCase) != 0)
+                return "CREATE OR REPLACE " + body; // неожиданная форма заголовка — не трогаем текст
+            pos += word.Length;
+        }
+
+        return $"CREATE OR REPLACE {sourceType} \"{owner}\".{body[pos..].TrimStart()}";
     }
 
     // ---------------------------------------------------------------- Вспомогательное

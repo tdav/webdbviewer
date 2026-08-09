@@ -15,6 +15,7 @@ public sealed class PostgresMetaStore : IAsyncDisposable
     private static readonly Regex SafeSchemaName = new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
 
     private readonly NpgsqlDataSource dataSource;
+    private readonly string connectionString;
     private readonly SemaphoreSlim initLock = new(1, 1);
     private volatile bool initialized;
 
@@ -31,6 +32,7 @@ public sealed class PostgresMetaStore : IAsyncDisposable
             throw new InvalidOperationException($"Недопустимое имя схемы метабазы: «{value.Schema}».");
 
         Schema = value.Schema;
+        connectionString = value.ConnectionString;
         dataSource = NpgsqlDataSource.Create(value.ConnectionString);
     }
 
@@ -58,14 +60,56 @@ public sealed class PostgresMetaStore : IAsyncDisposable
             if (initialized)
                 return;
 
-            await using var connection = await dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-            await using var cmd = new NpgsqlCommand(BuildDdl(Schema), connection);
-            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            NpgsqlConnection connection;
+            try
+            {
+                connection = await dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+            }
+            catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InvalidCatalogName)
+            {
+                await CreateDatabaseAsync(ct).ConfigureAwait(false);
+                connection = await dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+            }
+
+            await using (connection)
+            {
+                await using var cmd = new NpgsqlCommand(BuildDdl(Schema), connection);
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+
             initialized = true;
         }
         finally
         {
             initLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Создаёт саму базу метахранилища, если её ещё нет: подключается к служебной базе
+    /// <c>postgres</c> тем же пользователем и выполняет CREATE DATABASE.
+    /// </summary>
+    private async Task CreateDatabaseAsync(CancellationToken ct)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        var database = builder.Database
+            ?? throw new InvalidOperationException("В строке подключения к метабазе не указана база данных.");
+
+        builder.Database = "postgres";
+        builder.Pooling = false;
+
+        await using var admin = new NpgsqlConnection(builder.ConnectionString);
+        await admin.OpenAsync(ct).ConfigureAwait(false);
+
+        var quoted = "\"" + database.Replace("\"", "\"\"") + "\"";
+        await using var cmd = new NpgsqlCommand($"CREATE DATABASE {quoted}", admin);
+        try
+        {
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.DuplicateDatabase)
+        {
+            // База появилась параллельно (другой экземпляр приложения) — этого и добивались.
         }
     }
 

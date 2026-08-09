@@ -12,9 +12,9 @@
               data-ds-id="@(Model.DefaultDsId?.ToString() ?? "")"
               data-dialect="@(Model.DefaultDialect ?? "postgres")"
               data-grid-target="#results-grid"
-              placeholder="-- Введите SQL-запрос…&#10;-- Ctrl+Enter — выполнить, Alt+X — выполнить скрипт"></textarea>
+              placeholder="-- Введите SQL-запрос…&#10;-- Ctrl+Enter — выполнить, Alt+X — выполнить скрипт">@Model.InitialText</textarea>
 </div>
 <button type="button" class="editor-tab-btn" data-tab="@Model.TabId"
         hx-swap-oob="beforeend:#editor-tabs-list">
-    Запрос @Model.Index <span class="editor-tab-close" title="Закрыть вкладку">&times;</span>
+    @(Model.Title ?? $"Запрос {Model.Index}") <span class="editor-tab-close" title="Закрыть вкладку">&times;</span>
 </button>

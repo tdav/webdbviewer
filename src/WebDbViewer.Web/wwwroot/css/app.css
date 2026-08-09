@@ -601,6 +601,26 @@ a.tree-name:hover { color: var(--accent-text); }
 .tree-open-data:focus-visible { opacity: 1; }
 .tree-open-data:hover { color: var(--accent-text); text-decoration: none; }
 
+/* Кнопка «исходник» живёт по тем же правилам, но идёт второй иконкой в строке,
+   поэтому прижимает к правому краю только когда «открыть данные» рядом нет. */
+.tree-open-source {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 0 0 var(--space-2xs);
+    border: 0;
+    background: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+.tree-open-data + .tree-open-source { margin-left: 0; }
+.tree-open-source .ui-icon { width: 13px; height: 13px; }
+.tree-label:hover .tree-open-source,
+.tree-open-source:focus-visible { opacity: 1; }
+.tree-open-source:hover { color: var(--accent-text); }
+
 /* ---------- Вкладки редактора ---------- */
 /* overflow: hidden — содержимое не вылезает за границы панели, когда разделитель
    сжимает редактор до минимума. */

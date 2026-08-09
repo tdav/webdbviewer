@@ -51,24 +51,13 @@ public static class DdlEndpoints
         var userName = http.User.Identity?.Name ?? "anonymous";
         var session = await sessionManager.GetOrCreateAsync(userName, ds, db, ct);
 
+        var task = GetDdlTextAsync(generator, session.Connection, schema, name, type, ct);
+        if (task is null)
+            return Results.BadRequest(new { error = $"Неизвестный тип объекта: «{type}»." });
+
         try
         {
-            var ddl = type.ToLowerInvariant() switch
-            {
-                "table" => await generator.GetTableDdlAsync(session.Connection, schema, name, ct),
-                "view" or "matview" or "materializedview"
-                    => await generator.GetViewDdlAsync(session.Connection, schema, name, ct),
-                "index" => await generator.GetIndexDdlAsync(session.Connection, schema, name, ct),
-                "function" => await generator.GetRoutineDdlAsync(session.Connection, schema, name, DbObjectType.Function, ct),
-                "procedure" => await generator.GetRoutineDdlAsync(session.Connection, schema, name, DbObjectType.Procedure, ct),
-                "package" => await generator.GetRoutineDdlAsync(session.Connection, schema, name, DbObjectType.Package, ct),
-                _ => null,
-            };
-
-            if (ddl is null)
-                return Results.BadRequest(new { error = $"Неизвестный тип объекта: «{type}»." });
-
-            return Results.Text(ddl, "text/plain; charset=utf-8");
+            return Results.Text(await task, "text/plain; charset=utf-8");
         }
         catch (DdlObjectNotFoundException ex)
         {
@@ -79,4 +68,28 @@ public static class DdlEndpoints
             return Results.BadRequest(new { error = $"Ошибка получения DDL: {ex.Message}" });
         }
     }
+
+    /// <summary>
+    /// DDL объекта по строковому типу из дерева навигатора; null — тип не поддерживается.
+    /// Общая точка для /api/ddl и вкладки редактора с исходником.
+    /// </summary>
+    public static Task<string>? GetDdlTextAsync(
+        IDdlGenerator generator,
+        System.Data.Common.DbConnection connection,
+        string schema,
+        string name,
+        string type,
+        CancellationToken ct) => type.ToLowerInvariant() switch
+        {
+            "table" => generator.GetTableDdlAsync(connection, schema, name, ct),
+            "view" or "matview" or "materializedview"
+                => generator.GetViewDdlAsync(connection, schema, name, ct),
+            "index" => generator.GetIndexDdlAsync(connection, schema, name, ct),
+            "function" => generator.GetRoutineDdlAsync(connection, schema, name, DbObjectType.Function, ct),
+            "procedure" => generator.GetRoutineDdlAsync(connection, schema, name, DbObjectType.Procedure, ct),
+            "package" => generator.GetRoutineDdlAsync(connection, schema, name, DbObjectType.Package, ct),
+            "trigger" => generator.GetRoutineDdlAsync(connection, schema, name, DbObjectType.Trigger, ct),
+            "type" => generator.GetRoutineDdlAsync(connection, schema, name, DbObjectType.Type, ct),
+            _ => null,
+        };
 }

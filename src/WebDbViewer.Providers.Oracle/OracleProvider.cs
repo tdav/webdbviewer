@@ -16,10 +16,15 @@ public sealed partial class OracleProvider : IDbProvider
         ("Tables", "Таблицы", DbObjectType.Table),
         ("Views", "Представления", DbObjectType.View),
         ("MaterializedViews", "Материализованные представления", DbObjectType.MaterializedView),
+        ("Indexes", "Индексы", DbObjectType.Index),
         ("Sequences", "Последовательности", DbObjectType.Sequence),
+        ("Synonyms", "Синонимы", DbObjectType.Synonym),
         ("Functions", "Функции", DbObjectType.Function),
         ("Procedures", "Процедуры", DbObjectType.Procedure),
         ("Packages", "Пакеты", DbObjectType.Package),
+        ("Types", "Типы", DbObjectType.Type),
+        ("Triggers", "Триггеры", DbObjectType.Trigger),
+        ("DbLinks", "Линки БД", DbObjectType.DbLink),
     ];
 
     /// <summary>Системные схемы Oracle (fallback-фильтр, если недоступен ALL_USERS.ORACLE_MAINTAINED).</summary>
@@ -220,15 +225,23 @@ public sealed partial class OracleProvider : IDbProvider
     private static async Task<IReadOnlyList<DbObjectNode>> GetCategoryChildrenAsync(
         DbConnection connection, string owner, string category, CancellationToken ct)
     {
+        // Линки БД в ALL_OBJECTS не попадают — у них собственный словарь.
+        if (category == "DbLinks")
+            return await GetDbLinkNodesAsync(connection, owner, ct).ConfigureAwait(false);
+
         (string objectType, DbObjectType nodeType, bool hasChildren) = category switch
         {
             "Tables" => ("TABLE", DbObjectType.Table, true),
             "Views" => ("VIEW", DbObjectType.View, true),
             "MaterializedViews" => ("MATERIALIZED VIEW", DbObjectType.MaterializedView, true),
+            "Indexes" => ("INDEX", DbObjectType.Index, false),
             "Sequences" => ("SEQUENCE", DbObjectType.Sequence, false),
+            "Synonyms" => ("SYNONYM", DbObjectType.Synonym, false),
             "Functions" => ("FUNCTION", DbObjectType.Function, false),
             "Procedures" => ("PROCEDURE", DbObjectType.Procedure, false),
             "Packages" => ("PACKAGE", DbObjectType.Package, false),
+            "Types" => ("TYPE", DbObjectType.Type, false),
+            "Triggers" => ("TRIGGER", DbObjectType.Trigger, false),
             _ => ("", DbObjectType.Table, false),
         };
         if (objectType.Length == 0)
@@ -262,6 +275,27 @@ public sealed partial class OracleProvider : IDbProvider
                 Type = nodeType,
                 Schema = owner,
                 HasChildren = hasChildren,
+            });
+        }
+        return result;
+    }
+
+    /// <summary>Линки БД схемы: ALL_DB_LINKS (в ALL_OBJECTS этот тип отсутствует).</summary>
+    private static async Task<IReadOnlyList<DbObjectNode>> GetDbLinkNodesAsync(
+        DbConnection connection, string owner, CancellationToken ct)
+    {
+        var result = new List<DbObjectNode>();
+        await using var cmd = CreateCommand(connection,
+            "SELECT db_link, host FROM all_db_links WHERE owner = :owner ORDER BY db_link", ("owner", owner));
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            result.Add(new DbObjectNode
+            {
+                Name = reader.GetString(0),
+                Type = DbObjectType.DbLink,
+                Schema = owner,
+                Comment = reader.IsDBNull(1) ? null : reader.GetString(1),
             });
         }
         return result;

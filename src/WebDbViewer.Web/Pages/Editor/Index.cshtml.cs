@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using WebDbViewer.Core;
+using WebDbViewer.Core.Ddl;
+using WebDbViewer.Web.Api;
 using WebDbViewer.Web.Services;
 
 namespace WebDbViewer.Web.Pages.Editor;
@@ -32,19 +34,59 @@ public sealed class EditorIndexModel : PageModel
         DataSources = await _store.GetAllAsync(ct);
     }
 
-    /// <summary>Новая вкладка редактора (hx-get="/editor?handler=Tab&amp;index=N").</summary>
-    public async Task<IActionResult> OnGetTabAsync(int index, CancellationToken ct)
+    /// <summary>
+    /// Новая вкладка редактора (hx-get="/editor?handler=Tab&amp;index=N").
+    /// С параметрами ds/schema/name/type вкладка открывается с исходником объекта:
+    /// текст правится и применяется обычным выполнением скрипта (CREATE OR REPLACE).
+    /// </summary>
+    public async Task<IActionResult> OnGetTabAsync(
+        int index, Guid? ds, string? schema, string? name, string? type, string? db, CancellationToken ct)
     {
         DataSources = await _store.GetAllAsync(ct);
         if (index < 1)
             index = 1;
-        var defaultDs = DataSources.FirstOrDefault();
+
+        var config = ds is { } dsId ? DataSources.FirstOrDefault(d => d.Id == dsId) : null;
+        var source = config is not null && !string.IsNullOrWhiteSpace(schema)
+                     && !string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(type)
+            ? await LoadSourceAsync(config, schema, name, type, db, ct)
+            : null;
+
+        var defaultDs = config ?? DataSources.FirstOrDefault();
         return Partial("_EditorTab", new EditorTabVm
         {
             Index = index,
             DefaultDsId = defaultDs?.Id,
-            DefaultDialect = defaultDs?.Kind.ToString().ToLowerInvariant()
+            DefaultDialect = defaultDs?.Kind.ToString().ToLowerInvariant(),
+            Title = source is null ? null : name,
+            InitialText = source
         });
+    }
+
+    /// <summary>Исходник объекта; при ошибке возвращает её текстом комментария — вкладка всё равно открывается.</summary>
+    private async Task<string> LoadSourceAsync(
+        DataSourceConfig config, string schema, string name, string type, string? db, CancellationToken ct)
+    {
+        try
+        {
+            var generator = HttpContext.RequestServices
+                .GetServices<IDdlGenerator>()
+                .FirstOrDefault(g => g.Kind == config.Kind);
+            if (generator is null)
+                return $"-- Генератор DDL для «{config.Kind}» не зарегистрирован.\n";
+
+            var session = await _sessions.GetOrCreateAsync(User.Identity?.Name ?? "anonymous", config.Id, db, ct);
+            var task = DdlEndpoints.GetDdlTextAsync(generator, session.Connection, schema, name, type, ct);
+            if (task is null)
+                return $"-- Показ исходника не поддержан для типа «{type}».\n";
+
+            return await task;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка получения исходника: {Schema}.{Name} ({Type})", schema, name, type);
+            return $"-- Не удалось получить исходник «{schema}.{name}»: {ex.Message}\n";
+        }
     }
 
     /// <summary>
@@ -119,6 +161,12 @@ public sealed record EditorTabVm
 
     /// <summary>Диалект для CodeMirror: "postgres" | "oracle".</summary>
     public string? DefaultDialect { get; init; }
+
+    /// <summary>Заголовок вкладки; null — обычная вкладка «Запрос N».</summary>
+    public string? Title { get; init; }
+
+    /// <summary>Текст, с которым открывается вкладка (исходник объекта).</summary>
+    public string? InitialText { get; init; }
 
     public string TabId => $"tab-{Index}";
 }

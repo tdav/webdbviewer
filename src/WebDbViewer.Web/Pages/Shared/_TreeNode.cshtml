@@ -10,6 +10,29 @@
     var dataUrl = isDataObject && node.Schema is not null
         ? $"/data/{Model.DsId}/{Uri.EscapeDataString(node.Schema)}/{Uri.EscapeDataString(node.Name)}{dbQuery}"
         : null;
+
+    // Исходник объекта: открывается отдельной вкладкой редактора, правится и применяется
+    // обычным выполнением скрипта (CREATE OR REPLACE). Папки категорий сюда не попадают —
+    // у них Attributes["kind"] == "folder".
+    var isFolder = node.Attributes is not null && node.Attributes.TryGetValue("kind", out var kind) && kind == "folder";
+    var sourceType = isFolder ? null : node.Type switch
+    {
+        DbObjectType.Table => "table",
+        DbObjectType.View => "view",
+        DbObjectType.MaterializedView => "matview",
+        DbObjectType.Index => "index",
+        DbObjectType.Function => "function",
+        DbObjectType.Procedure => "procedure",
+        DbObjectType.Package => "package",
+        DbObjectType.Trigger => "trigger",
+        DbObjectType.Type => "type",
+        _ => null
+    };
+    var sourceUrl = sourceType is not null && node.Schema is not null
+        ? $"/editor?handler=Tab&ds={Model.DsId}&schema={Uri.EscapeDataString(node.Schema)}"
+          + $"&name={Uri.EscapeDataString(node.Name)}&type={sourceType}"
+          + (Model.Database is { Length: > 0 } sdb ? $"&db={Uri.EscapeDataString(sdb)}" : "")
+        : null;
 }
 <li class="tree-node @(node.IsSystem ? "system" : null)" data-type="@node.Type" data-name="@node.Name" data-schema="@node.Schema" data-database="@Model.Database">
     @if (expandable)
@@ -35,6 +58,17 @@
                    data-tip="Открыть данные таблицы «@node.Name»"
                    onclick="event.stopPropagation()">@UiIcons.OpenData</a>
             }
+            @if (sourceUrl is not null)
+            {
+                <button type="button" class="tree-open-source"
+                        hx-get="@sourceUrl"
+                        hx-vals='js:{index: document.querySelectorAll("#editor-tabs-list .editor-tab-btn").length + 1}'
+                        hx-target="#editor-panes"
+                        hx-swap="beforeend"
+                        aria-label="Открыть исходник: @node.Name"
+                        data-tip="Открыть исходник «@node.Name»"
+                        onclick="event.stopPropagation()">@UiIcons.Source</button>
+            }
         </span>
     }
     else
@@ -52,6 +86,16 @@
             @if (node.Schema is not null && Model.NoExpand)
             {
                 <span class="tree-comment">@node.Schema</span>
+            }
+            @if (sourceUrl is not null)
+            {
+                <button type="button" class="tree-open-source"
+                        hx-get="@sourceUrl"
+                        hx-vals='js:{index: document.querySelectorAll("#editor-tabs-list .editor-tab-btn").length + 1}'
+                        hx-target="#editor-panes"
+                        hx-swap="beforeend"
+                        aria-label="Открыть исходник: @node.Name"
+                        data-tip="Открыть исходник «@node.Name»">@UiIcons.Source</button>
             }
         </span>
     }
