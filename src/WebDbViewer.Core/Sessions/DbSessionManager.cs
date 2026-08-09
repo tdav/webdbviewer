@@ -36,7 +36,7 @@ public sealed class DbSessionManager : IDbSessionManager, IAsyncDisposable
     /// <summary>Число живых сессий (для диагностики).</summary>
     public int ActiveSessionCount => _sessions.Count;
 
-    public async Task<IDbSession> GetOrCreateAsync(string userName, Guid dataSourceId, CancellationToken ct)
+    public async Task<IDbSession> GetOrCreateAsync(string userName, Guid dataSourceId, string? database, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userName);
 
@@ -45,10 +45,10 @@ public sealed class DbSessionManager : IDbSessionManager, IAsyncDisposable
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            // Переиспользуем живую сессию этого пользователя с тем же датасорсом.
+            // Переиспользуем живую сессию этого пользователя с тем же датасорсом и той же базой.
             foreach (var s in _sessions.Values)
             {
-                if (!string.Equals(s.UserName, userName, StringComparison.Ordinal) || s.DataSourceId != dataSourceId)
+                if (!IsOwnedBy(s, userName, dataSourceId) || !MatchesDatabase(s, database))
                     continue;
                 if (s.IsDisposed || s.Connection.State != ConnectionState.Open)
                 {
@@ -59,27 +59,65 @@ public sealed class DbSessionManager : IDbSessionManager, IAsyncDisposable
                 return s;
             }
 
-            var userCount = _sessions.Values.Count(s => string.Equals(s.UserName, userName, StringComparison.Ordinal));
-            if (userCount >= _options.MaxSessionsPerUser)
-                throw new InvalidOperationException(
-                    $"Превышен лимит сессий на пользователя ({_options.MaxSessionsPerUser}). Закройте одну из открытых сессий.");
-
             var config = await _dataSourceStore.GetAsync(dataSourceId, ct).ConfigureAwait(false)
                 ?? throw new InvalidOperationException($"Датасорс {dataSourceId} не найден.");
 
+            var isPrimary = string.IsNullOrWhiteSpace(database)
+                || string.Equals(database, config.Database, StringComparison.Ordinal);
+            var effectiveDatabase = isPrimary ? config.Database : database!;
+
+            await EnsureCapacityAsync(userName).ConfigureAwait(false);
+
             var password = ResolvePassword(config);
             var provider = _providerRegistry.Get(config.Kind);
-            var connection = await provider.OpenConnectionAsync(config, password, ct).ConfigureAwait(false);
+            var connection = await provider
+                .OpenConnectionAsync(config with { Database = effectiveDatabase }, password, ct)
+                .ConfigureAwait(false);
 
-            var session = new DbSession(dataSourceId, userName, connection);
+            var session = new DbSession(dataSourceId, userName, connection, effectiveDatabase, isPrimary);
             _sessions[session.SessionId] = session;
-            _logger?.LogInformation("Открыта сессия {SessionId} пользователя {UserName} к датасорсу {DataSourceId}.",
-                session.SessionId, userName, dataSourceId);
+            _logger?.LogInformation(
+                "Открыта сессия {SessionId} пользователя {UserName} к датасорсу {DataSourceId}, база {Database}.",
+                session.SessionId, userName, dataSourceId, effectiveDatabase);
             return session;
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+    private static bool IsOwnedBy(DbSession session, string userName, Guid dataSourceId) =>
+        string.Equals(session.UserName, userName, StringComparison.Ordinal) && session.DataSourceId == dataSourceId;
+
+    /// <summary>null — подходит основная сессия датасорса; иначе — сессия именно к этой базе.</summary>
+    private static bool MatchesDatabase(DbSession session, string? database) =>
+        string.IsNullOrWhiteSpace(database)
+            ? session.IsPrimary
+            : string.Equals(session.Database, database, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Проверяет лимит сессий пользователя. Сессии навигатора к другим базам сервера не должны
+    /// вытеснять рабочие: при переполнении закрывается самая давняя из них (LRU).
+    /// </summary>
+    private async Task EnsureCapacityAsync(string userName)
+    {
+        while (_sessions.Values.Count(s => string.Equals(s.UserName, userName, StringComparison.Ordinal))
+               >= _options.MaxSessionsPerUser)
+        {
+            var evictable = _sessions.Values
+                .Where(s => string.Equals(s.UserName, userName, StringComparison.Ordinal) && !s.IsPrimary)
+                .OrderBy(s => s.LastUsedAt)
+                .FirstOrDefault();
+
+            if (evictable is null)
+                throw new InvalidOperationException(
+                    $"Превышен лимит сессий на пользователя ({_options.MaxSessionsPerUser}). Закройте одну из открытых сессий.");
+
+            await RemoveAndDisposeAsync(evictable.SessionId).ConfigureAwait(false);
+            _logger?.LogInformation(
+                "Сессия навигатора {SessionId} (база {Database}) закрыта по лимиту сессий пользователя {UserName}.",
+                evictable.SessionId, evictable.Database, userName);
         }
     }
 

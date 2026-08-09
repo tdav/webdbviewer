@@ -34,6 +34,7 @@ public static class DdlEndpoints
         string? schema,
         string? name,
         string? type,
+        string? db,
         CancellationToken ct)
     {
         if (ds == Guid.Empty || string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(type))
@@ -48,7 +49,7 @@ public static class DdlEndpoints
             return Results.Problem($"Генератор DDL для «{config.Kind}» не зарегистрирован.", statusCode: 500);
 
         var userName = http.User.Identity?.Name ?? "anonymous";
-        var session = await sessionManager.GetOrCreateAsync(userName, ds, ct);
+        var session = await sessionManager.GetOrCreateAsync(userName, ds, db, ct);
 
         try
         {

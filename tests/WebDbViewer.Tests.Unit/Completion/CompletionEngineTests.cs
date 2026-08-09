@@ -64,6 +64,18 @@ public class CompletionEngineTests
     }
 
     [Fact]
+    public async Task ИмяСхемыСТочкойПослеFrom_ПредлагаютсяТаблицыСхемы()
+    {
+        // «FROM schema.» анализатор областей видимости принимает за таблицу «schema»,
+        // из-за чего подсказки пропадали совсем.
+        var items = await CompleteAsync("SELECT * FROM public.|");
+
+        var tables = items.Where(i => i.Kind is "table" or "view").Select(i => i.Label).ToList();
+        Assert.Contains("users", tables);
+        Assert.Contains("orders", tables);
+    }
+
+    [Fact]
     public async Task ПослеFromСПрефиксом_ФильтруютсяТаблицыПоПрефиксу()
     {
         var items = await CompleteAsync("SELECT id FROM u|");

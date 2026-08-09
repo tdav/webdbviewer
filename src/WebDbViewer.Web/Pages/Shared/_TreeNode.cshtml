@@ -4,28 +4,36 @@
     var node = Model.Node;
     var expandable = node.HasChildren && !Model.NoExpand;
     var url = $"/tree?ds={Model.DsId}&path={Uri.EscapeDataString(Model.Path)}";
-    // Ссылка на просмотр данных для таблиц/представлений
+    // Ссылка на просмотр данных для таблиц/представлений; db — если объект в другой базе сервера
     var isDataObject = node.Type is DbObjectType.Table or DbObjectType.View or DbObjectType.MaterializedView;
+    var dbQuery = Model.Database is { Length: > 0 } db ? $"?db={Uri.EscapeDataString(db)}" : "";
     var dataUrl = isDataObject && node.Schema is not null
-        ? $"/data/{Model.DsId}/{Uri.EscapeDataString(node.Schema)}/{Uri.EscapeDataString(node.Name)}"
+        ? $"/data/{Model.DsId}/{Uri.EscapeDataString(node.Schema)}/{Uri.EscapeDataString(node.Name)}{dbQuery}"
         : null;
 }
-<li class="tree-node @(node.IsSystem ? "system" : null)" data-type="@node.Type" data-name="@node.Name" data-schema="@node.Schema">
+<li class="tree-node @(node.IsSystem ? "system" : null)" data-type="@node.Type" data-name="@node.Name" data-schema="@node.Schema" data-database="@Model.Database">
     @if (expandable)
     {
+        @* Раскрытием управляет делегированный обработчик в app.js: он же держит
+           aria-expanded и класс .expanded в согласии с реальным состоянием. *@
         <span class="tree-label"
+              role="button"
+              tabindex="0"
+              aria-expanded="false"
               hx-get="@url"
-              hx-trigger="click once"
+              hx-trigger="click once, keydown[key=='Enter'||key==' '] once"
               hx-target="closest li"
               hx-swap="beforeend"
               hx-include="#nav-hide-system"
-              onclick="var u = this.parentElement.querySelector(':scope > ul'); if (u) { u.hidden = !u.hidden; }"
               title="@DbObjectIcons.Title(node.Type)@(node.Comment is not null ? " — " + node.Comment : "")">
             <span class="tree-toggle">&#9656;</span><span class="tree-icon">@DbObjectIcons.For(node.Type)</span>
             <span class="tree-name">@node.Name</span>
             @if (dataUrl is not null)
             {
-                <a class="tree-open-data" href="@dataUrl" title="Открыть данные" onclick="event.stopPropagation()">&#10530;</a>
+                <a class="tree-open-data" href="@dataUrl"
+                   aria-label="Открыть данные: @node.Name"
+                   data-tip="Открыть данные таблицы «@node.Name»"
+                   onclick="event.stopPropagation()">@UiIcons.OpenData</a>
             }
         </span>
     }

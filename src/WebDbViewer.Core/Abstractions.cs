@@ -7,6 +7,12 @@ public interface IDbProvider
 {
     DbKind Kind { get; }
 
+    /// <summary>
+    /// true — у СУБД есть уровень «база данных» над схемами (PostgreSQL: одно подключение = одна база,
+    /// список баз сервера доступен отдельно). false — корень дерева сразу схемы (Oracle).
+    /// </summary>
+    bool SupportsDatabaseLevel { get; }
+
     /// <summary>Строит строку подключения из конфигурации (пароль уже расшифрован).</summary>
     string BuildConnectionString(DataSourceConfig config, string plainPassword);
 
@@ -21,6 +27,12 @@ public interface IDbProvider
 
     /// <summary>Список схем.</summary>
     Task<IReadOnlyList<string>> GetSchemasAsync(DbConnection connection, bool includeSystem, CancellationToken ct);
+
+    /// <summary>
+    /// Базы данных сервера (для корня дерева). Пустой список — уровень БД не поддерживается
+    /// (<see cref="SupportsDatabaseLevel"/> = false).
+    /// </summary>
+    Task<IReadOnlyList<DbObjectNode>> GetDatabasesAsync(DbConnection connection, bool includeSystem, CancellationToken ct);
 
     /// <summary>Полный снапшот схемы для кэша метаданных (таблицы, колонки, FK, роутины).</summary>
     Task<SchemaSnapshot> LoadSchemaSnapshotAsync(DbConnection connection, string schemaName, CancellationToken ct);
@@ -72,6 +84,10 @@ public interface IDbSession : IAsyncDisposable
     Guid SessionId { get; }
     Guid DataSourceId { get; }
     string UserName { get; }
+    /// <summary>База данных соединения. Совпадает с базой из конфигурации, кроме сессий навигатора к другим базам сервера.</summary>
+    string Database { get; }
+    /// <summary>true — сессия к базе из конфигурации датасорса (основная); false — к другой базе сервера.</summary>
+    bool IsPrimary { get; }
     DbConnection Connection { get; }
     bool AutoCommit { get; set; }
     bool InTransaction { get; }
@@ -88,7 +104,11 @@ public interface IDbSession : IAsyncDisposable
 /// <summary>Менеджер stateful-сессий: лимиты на пользователя, TTL, гарантированное освобождение.</summary>
 public interface IDbSessionManager
 {
-    Task<IDbSession> GetOrCreateAsync(string userName, Guid dataSourceId, CancellationToken ct);
+    /// <summary>
+    /// Сессия пользователя с датасорсом. <paramref name="database"/> — база сервера, отличная от базы
+    /// из конфигурации (навигатор по всем базам); null — база датасорса.
+    /// </summary>
+    Task<IDbSession> GetOrCreateAsync(string userName, Guid dataSourceId, string? database, CancellationToken ct);
     Task<IDbSession?> FindAsync(Guid sessionId, CancellationToken ct);
     Task CloseAsync(Guid sessionId, CancellationToken ct);
     Task<IReadOnlyList<IDbSession>> ListForUserAsync(string userName, CancellationToken ct);

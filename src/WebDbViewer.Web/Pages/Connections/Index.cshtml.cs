@@ -52,7 +52,8 @@ public sealed class ConnectionsIndexModel : PageModel
             Username = config.Username,
             UseSsl = config.UseSsl,
             ReadOnly = config.ReadOnly,
-            IsProduction = config.IsProduction
+            IsProduction = config.IsProduction,
+            AllowAllSchemas = config.AllowAllSchemas
         });
     }
 
@@ -78,7 +79,8 @@ public sealed class ConnectionsIndexModel : PageModel
             ProtectedPassword = protectedPassword,
             UseSsl = input.UseSsl,
             ReadOnly = input.ReadOnly,
-            IsProduction = input.IsProduction
+            IsProduction = input.IsProduction,
+            AllowAllSchemas = input.AllowAllSchemas
         };
 
         await _store.SaveAsync(config, ct);
@@ -157,6 +159,8 @@ public sealed class ConnectionFormInput
     public bool UseSsl { get; set; }
     public bool ReadOnly { get; set; }
     public bool IsProduction { get; set; }
+    /// <summary>Чекбокс «Все схемы / базы данных»: снятый флажок ограничивает навигатор схемой подключения.</summary>
+    public bool AllowAllSchemas { get; set; }
 }
 
 /// <summary>Модель формы подключения для partial _Form.</summary>
@@ -172,6 +176,8 @@ public sealed record ConnectionFormVm
     public bool UseSsl { get; init; }
     public bool ReadOnly { get; init; }
     public bool IsProduction { get; init; }
+    /// <summary>По умолчанию новое подключение видит все схемы — как и раньше.</summary>
+    public bool AllowAllSchemas { get; init; } = true;
 }
 
 /// <summary>Результат проверки подключения для partial _TestResult.</summary>

@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-09T00:00:00.000Z",
+  "title": "Design System: WebDbViewer",
+  "extensions": {
+    "colorMeta": {
+      "ember-orange":       { "role": "primary",  "displayName": "Ember Orange",      "canonical": "#FF6B2C", "tonalRamp": ["#3D1800", "#5A2400", "#7A3300", "#994400", "#BB5500", "#C25100", "#DD6622", "#FF6B2C", "#FF8C42", "#FFB085"] },
+      "ember-orange-light": { "role": "primary",  "displayName": "Ember Orange Light","canonical": "#FF8C42", "tonalRamp": ["#3D2000", "#5A3000", "#7A4200", "#9A5400", "#BB6600", "#DD7822", "#FF8C42", "#FFA66A", "#FFC099", "#FFDDC2"] },
+      "accent-ink":         { "role": "primary",  "displayName": "Accent Ink",        "canonical": "#1A1A20", "tonalRamp": ["#0A0A10", "#121218", "#1A1A20", "#252530", "#2D2D35", "#363640", "#3A3A45", "#43434F", "#606070", "#8A8A9A"] },
+      "bg-dark":            { "role": "neutral",  "displayName": "Deep Slate",        "canonical": "#2D2D35", "tonalRamp": ["#0A0A10", "#141418", "#1E1E26", "#28282F", "#2D2D35", "#363640", "#3A3A45", "#43434F", "#787888", "#A0A0B0"] },
+      "panel-dark":         { "role": "neutral",  "displayName": "Elevated Slate",    "canonical": "#363640", "tonalRamp": ["#0A0A10", "#141418", "#1E1E26", "#28282F", "#2D2D35", "#363640", "#3A3A45", "#43434F", "#787888", "#A0A0B0"] },
+      "surface-dark":       { "role": "neutral",  "displayName": "Mid Slate",         "canonical": "#3A3A45", "tonalRamp": ["#0A0A10", "#141418", "#1E1E26", "#2D2D35", "#363640", "#3A3A45", "#43434F", "#606070", "#808090", "#A8A8B8"] },
+      "hover-dark":         { "role": "neutral",  "displayName": "Raised Slate",      "canonical": "#43434F", "tonalRamp": ["#0A0A10", "#1E1E26", "#2D2D35", "#363640", "#3A3A45", "#43434F", "#525260", "#686878", "#909098", "#B8B8C8"] },
+      "well-dark":          { "role": "neutral",  "displayName": "Sunken Void",       "canonical": "#1E1E26", "tonalRamp": ["#050508", "#0A0A10", "#121218", "#1E1E26", "#252530", "#2D2D38", "#363642", "#484858", "#686878", "#909098"] },
+      "bg-light":           { "role": "neutral",  "displayName": "Cool Mist",         "canonical": "#F0F0F5", "tonalRamp": ["#28282F", "#3A3A42", "#505058", "#606070", "#888892", "#AAAAB2", "#C8C8D0", "#DCDCE4", "#E9E9F1", "#F0F0F5"] },
+      "panel-light":        { "role": "neutral",  "displayName": "Pure Panel",        "canonical": "#FFFFFF", "tonalRamp": ["#303030", "#484848", "#606060", "#808080", "#A0A0A0", "#C0C0C0", "#D8D8D8", "#EBEBEB", "#F5F5F5", "#FFFFFF"] },
+      "surface-light":      { "role": "neutral",  "displayName": "Recessed",          "canonical": "#E9E9F1", "tonalRamp": ["#28282F", "#38383F", "#505058", "#606070", "#888892", "#ACACB4", "#C4C4CC", "#D4D4DC", "#E4E4EC", "#E9E9F1"] },
+      "hover-light":        { "role": "neutral",  "displayName": "Hover Light",       "canonical": "#E4E4EC", "tonalRamp": ["#28282F", "#38383F", "#505058", "#606070", "#888892", "#ACACB4", "#C4C4CC", "#D4D4DC", "#E4E4EC", "#F0F0F5"] },
+      "text-primary-dark":  { "role": "neutral",  "displayName": "Stark White",       "canonical": "#FFFFFF", "tonalRamp": ["#303030", "#484848", "#606060", "#808080", "#A0A0A0", "#C0C0C0", "#D8D8D8", "#EBEBEB", "#F5F5F5", "#FFFFFF"] },
+      "text-primary-light": { "role": "neutral",  "displayName": "Deep Navy",         "canonical": "#1A1A2E", "tonalRamp": ["#0A0A18", "#121220", "#1A1A2E", "#28283C", "#383850", "#505068", "#707088", "#9090A8", "#B0B0C8", "#D0D0E0"] },
+      "text-muted-dark":    { "role": "neutral",  "displayName": "Steel Mist",        "canonical": "#A8A8B8", "tonalRamp": ["#202030", "#303040", "#484858", "#606070", "#787888", "#8A8A9A", "#A0A0B0", "#A8A8B8", "#CECEDE", "#E4E4F0"] },
+      "text-muted-light":   { "role": "neutral",  "displayName": "Slate Ink",         "canonical": "#606070", "tonalRamp": ["#1E1E28", "#2E2E38", "#464650", "#5E5E68", "#606070", "#7D7D8A", "#9A9AA8", "#B4B4C0", "#CACACC", "#E0E0E8"] },
+      "sem-success-dark":   { "role": "semantic", "displayName": "Success Green",     "canonical": "#4ADE80", "tonalRamp": ["#003018", "#005028", "#00783E", "#15803D", "#166534", "#20BC68", "#38D078", "#4ADE80", "#70E89A", "#9AF0B8"] },
+      "sem-success-light":  { "role": "semantic", "displayName": "Success Green Dark","canonical": "#15803D", "tonalRamp": ["#002810", "#00381C", "#0B4A26", "#166534", "#15803D", "#189949", "#20BC68", "#38D078", "#4ADE80", "#9AF0B8"] },
+      "sem-warning-dark":   { "role": "semantic", "displayName": "Warning Amber",     "canonical": "#FFB02E", "tonalRamp": ["#3D2800", "#5A3C00", "#7A5200", "#9A6A00", "#B45309", "#DDA000", "#FFB02E", "#FFC55E", "#FFDAA0", "#FFEECC"] },
+      "sem-warning-light":  { "role": "semantic", "displayName": "Warning Amber Dark","canonical": "#B45309", "tonalRamp": ["#2E1A00", "#402400", "#5A3400", "#7A4700", "#9A5A00", "#B45309", "#D97706", "#FFB02E", "#FFC55E", "#FFDAA0"] },
+      "sem-danger-dark":    { "role": "semantic", "displayName": "Alert Red Text",    "canonical": "#FF8080", "tonalRamp": ["#3D0000", "#620000", "#880000", "#A80000", "#CC1010", "#EE2222", "#FF4D4D", "#FF7070", "#FF8080", "#FF9999"] },
+      "sem-danger-light":   { "role": "semantic", "displayName": "Alert Red",         "canonical": "#DC2626", "tonalRamp": ["#3D0000", "#5E0505", "#7F0D0D", "#A31414", "#DC2626", "#EE2222", "#FF4D4D", "#FF7070", "#FF8080", "#FFCCCC"] },
+      "sem-danger-solid":   { "role": "semantic", "displayName": "Alert Red Fill",    "canonical": "#FF4D4D", "tonalRamp": ["#3D0000", "#620000", "#880000", "#A80000", "#CC1010", "#EE2222", "#FF4D4D", "#FF7070", "#FF9999", "#FFCCCC"] },
+      "sem-info-dark":      { "role": "semantic", "displayName": "Data Blue",         "canonical": "#6FB8FF", "tonalRamp": ["#001840", "#002C6A", "#00439A", "#0055BB", "#2563EB", "#3390FF", "#4DA6FF", "#6FB8FF", "#AACFFF", "#D4E8FF"] },
+      "sem-info-light":     { "role": "semantic", "displayName": "Data Blue Dark",    "canonical": "#2563EB", "tonalRamp": ["#001028", "#001C4A", "#002C6A", "#00439A", "#1D4ED8", "#2563EB", "#3390FF", "#4DA6FF", "#6FB8FF", "#AACFFF"] },
+      "sem-muted-dark":     { "role": "semantic", "displayName": "Muted Grey Light",  "canonical": "#A8A8B8", "tonalRamp": ["#1A1C20", "#282C32", "#38404A", "#505864", "#606870", "#6B7280", "#848E9A", "#A0AAB4", "#A8A8B8", "#D8E0E8"] },
+      "sem-muted-light":    { "role": "semantic", "displayName": "Muted Grey",        "canonical": "#6B7280", "tonalRamp": ["#1A1C20", "#282C32", "#38404A", "#505864", "#606870", "#6B7280", "#848E9A", "#A0AAB4", "#BEC8D0", "#D8E0E8"] },
+      "syntax-keyword-dark":  { "role": "semantic", "displayName": "Keyword Violet",       "canonical": "#C8A0FF", "tonalRamp": ["#1E0A38", "#2E1252", "#421C74", "#55219A", "#6B21A8", "#8A4BD0", "#A874E8", "#C8A0FF", "#DCC0FF", "#EEE0FF"] },
+      "syntax-keyword-light": { "role": "semantic", "displayName": "Keyword Violet Dark",  "canonical": "#6B21A8", "tonalRamp": ["#1E0A38", "#2E1252", "#421C74", "#55219A", "#6B21A8", "#8A4BD0", "#A874E8", "#C8A0FF", "#DCC0FF", "#EEE0FF"] },
+      "syntax-string-dark":   { "role": "semantic", "displayName": "String Green",         "canonical": "#7DDFA0", "tonalRamp": ["#04220F", "#08381A", "#0E4E27", "#166534", "#1C8043", "#37A863", "#5AC482", "#7DDFA0", "#A6ECC0", "#CEF6DC"] },
+      "syntax-string-light":  { "role": "semantic", "displayName": "String Green Dark",    "canonical": "#166534", "tonalRamp": ["#04220F", "#08381A", "#0E4E27", "#166534", "#1C8043", "#37A863", "#5AC482", "#7DDFA0", "#A6ECC0", "#CEF6DC"] },
+      "syntax-number-dark":   { "role": "semantic", "displayName": "Number Teal",          "canonical": "#6FD9D2", "tonalRamp": ["#04211F", "#07322F", "#0A4441", "#0F5F66", "#12787A", "#2E9C99", "#4CBDB8", "#6FD9D2", "#9CE9E4", "#C8F5F2"] },
+      "syntax-number-light":  { "role": "semantic", "displayName": "Number Teal Dark",     "canonical": "#0F5F66", "tonalRamp": ["#04211F", "#07322F", "#0A4441", "#0F5F66", "#12787A", "#2E9C99", "#4CBDB8", "#6FD9D2", "#9CE9E4", "#C8F5F2"] }
+    },
+    "semanticRoles": {
+      "success": { "query": "Запрос выполнен (OK)",  "connection": "SSL включён",            "transaction": "Зафиксирована" },
+      "warning": { "query": "Долгий запрос",          "connection": "Только чтение",          "transaction": "Открыта, не зафиксирована" },
+      "danger":  { "query": "Ошибка выполнения",      "connection": "Боевая база (PROD)",     "transaction": "Откачена" },
+      "info":    { "query": "Выполняется",            "connection": null,                     "transaction": null },
+      "muted":   { "query": "Отменён",                "connection": "Отключён",               "transaction": "Нет транзакции" }
+    },
+    "typographyMeta": {
+      "title":    { "displayName": "Title",    "purpose": "Заголовки страниц, заголовок карточки логина." },
+      "headline": { "displayName": "Headline", "purpose": "Заголовок модального окна." },
+      "body":     { "displayName": "Body",     "purpose": "Основной текст UI, строки таблиц, узлы дерева, кнопки." },
+      "label":    { "displayName": "Label",    "purpose": "Метки полей, заголовки колонок, статусбары, счётчики." },
+      "micro":    { "displayName": "Micro",    "purpose": "Бейджи, подсказки под полем, комментарий у узла дерева." },
+      "mono":     { "displayName": "Mono",     "purpose": "SQL, имя объекта, длительность, число строк, IP, содержимое ячейки." }
+    },
+    "shadows": [
+      { "name": "overlay",    "value": "0 8px 24px rgb(0 0 0 / .45)",  "purpose": "Модальный диалог, попап редактирования ячейки грида." },
+      { "name": "overlay-sm", "value": "0 4px 12px rgb(0 0 0 / .35)",  "purpose": "Автодополнение редактора, тост." },
+      { "name": "focus-ring", "value": "0 0 0 2px var(--accent-soft)", "purpose": "Кольцо фокуса поля ввода в дополнение к границе акцента." }
+    ],
+    "borders": [
+      { "name": "hairline-dark",         "value": "1px solid rgb(255 255 255 / .08)", "purpose": "Границы поверхностей и разделители строк в тёмной теме." },
+      { "name": "hairline-strong-dark",  "value": "1px solid rgb(255 255 255 / .16)", "purpose": "Hover-границы контролов в тёмной теме." },
+      { "name": "hairline-light",        "value": "1px solid rgb(26 26 46 / .12)",    "purpose": "Границы поверхностей и разделители строк в светлой теме." },
+      { "name": "hairline-strong-light", "value": "1px solid rgb(26 26 46 / .22)",    "purpose": "Hover-границы контролов в светлой теме." }
+    ],
+    "motion": [
+      { "name": "fast",   "value": "120ms ease", "purpose": "Hover, смена цвета текста, поворот треугольника раскрытия." },
+      { "name": "normal", "value": "200ms ease", "purpose": "Переходы состояний панелей." },
+      { "name": "modal",  "value": "160ms cubic-bezier(.22, 1, .36, 1)", "purpose": "Появление модального диалога." }
+    ],
+    "breakpoints": [
+      { "name": "stack", "value": "860px", "purpose": "Ниже — рабочая область складывается по вертикали; значение продублировано в splitter.js." },
+      { "name": "form",  "value": "620px", "purpose": "Ниже — сетка формы схлопывается в одну колонку." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Button Default",
+      "kind": "button",
+      "refersTo": "button-default",
+      "description": "Плоская кнопка для вторичных действий: surface-фон и hairline-граница, без теней.",
+      "html": "<button class=\"ds-btn-default\">Выполнить скрипт</button>",
+      "css": ".ds-btn-default { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 12px; min-height: 30px; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 400; cursor: pointer; background: #3A3A45; color: #FFFFFF; transition: background 120ms ease, border-color 120ms ease; white-space: nowrap; } .ds-btn-default:hover:not(:disabled) { background: #43434F; border-color: rgba(255,255,255,0.16); } .ds-btn-default:active:not(:disabled) { background: #2D2D35; } .ds-btn-default:focus-visible { outline: 2px solid #FF6B2C; outline-offset: 2px; } .ds-btn-default:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Button Accent",
+      "kind": "button",
+      "refersTo": "button-accent",
+      "description": "Главное действие экрана: сплошной Ember Orange с чернильным текстом. Максимум одна такая кнопка в поле зрения. Белый текст здесь запрещён — 2.8:1.",
+      "html": "<button class=\"ds-btn-accent\">Выполнить</button>",
+      "css": ".ds-btn-accent { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 12px; min-height: 30px; border: 1px solid #FF6B2C; border-radius: 6px; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; background: #FF6B2C; color: #1A1A20; transition: background 120ms ease; white-space: nowrap; } .ds-btn-accent:hover:not(:disabled) { background: #FF8C42; border-color: #FF8C42; } .ds-btn-accent:active:not(:disabled) { background: #FF6B2C; filter: brightness(0.95); } .ds-btn-accent:focus-visible { outline: 2px solid #FF6B2C; outline-offset: 2px; } .ds-btn-accent:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Button Ghost",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Прозрачная кнопка для вторичных действий рядом с акцентной.",
+      "html": "<button class=\"ds-btn-ghost\">Отмена</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 12px; min-height: 30px; border: 1px solid transparent; border-radius: 6px; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; cursor: pointer; background: transparent; color: #A8A8B8; transition: background 120ms ease, color 120ms ease; white-space: nowrap; } .ds-btn-ghost:hover:not(:disabled) { background: rgba(255,107,44,0.14); color: #FFFFFF; } .ds-btn-ghost:focus-visible { outline: 2px solid #FF6B2C; outline-offset: 2px; } .ds-btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input-default",
+      "description": "Плоское поле ввода: well-фон и hairline-граница. Фокус даёт границу акцента плюс кольцо — одной границы мало на панели, где полей десяток подряд.",
+      "html": "<input class=\"ds-input-field\" type=\"text\" placeholder=\"Поиск объектов…\"/>",
+      "css": ".ds-input-field { background: #1E1E26; border: 1px solid rgba(255,255,255,0.08); color: #FFFFFF; border-radius: 6px; padding: 6px 8px; min-height: 30px; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; transition: border-color 120ms ease; } .ds-input-field:hover:not(:disabled) { border-color: rgba(255,255,255,0.16); } .ds-input-field:focus-visible { outline: none; border-color: #FF6B2C; box-shadow: 0 0 0 2px rgba(255,107,44,0.14); } .ds-input-field::placeholder { color: #A8A8B8; opacity: 1; } .ds-input-field:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": null,
+      "description": "Pill-тег статуса запроса и режима подключения. Цвет — второй канал, метка обязательна. PROD использует сплошную заливку и отдельный класс: это роль подключения, а не ошибки.",
+      "html": "<div class=\"ds-badges\"><span class=\"ds-badge ds-badge--ok\">OK</span><span class=\"ds-badge ds-badge--error\">Ошибка</span><span class=\"ds-badge ds-badge--ro\">Только чтение</span><span class=\"ds-badge ds-badge--ssl\">SSL</span><span class=\"ds-badge ds-badge--prod\">PROD</span></div>",
+      "css": ".ds-badges { display: flex; gap: 4px; flex-wrap: wrap; } .ds-badge { display: inline-block; padding: 1px 8px; border-radius: 9999px; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 11px; font-weight: 600; line-height: 1.6; border: 1px solid transparent; white-space: nowrap; } .ds-badge--ok { color: #4ADE80; background: rgba(74,222,128,0.14); } .ds-badge--error { color: #FF8080; background: rgba(255,77,77,0.15); border-color: #FF8080; } .ds-badge--ro { color: #FFB02E; background: rgba(255,176,46,0.14); border-color: #FFB02E; } .ds-badge--ssl { color: #4ADE80; background: rgba(74,222,128,0.14); } .ds-badge--prod { color: #1A1A20; background: #FF4D4D; }"
+    },
+    {
+      "name": "Tree Node",
+      "kind": "nav",
+      "refersTo": null,
+      "description": "Узел навигатора объектов — центральный компонент. Штриховая иконка типа на currentColor, поворачивающийся треугольник раскрытия, направляющая уровня 1px. Единственное разрешённое применение боковой границы в системе.",
+      "html": "<ul class=\"ds-tree\"><li class=\"ds-tree-node ds-tree-node--expanded\"><span class=\"ds-tree-label\" role=\"button\" tabindex=\"0\" aria-expanded=\"true\"><span class=\"ds-tree-toggle\">&#9656;</span><span class=\"ds-tree-icon\"><svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><ellipse cx=\"8\" cy=\"3.6\" rx=\"5\" ry=\"2.1\"/><path d=\"M3 3.6v8.8c0 1.16 2.24 2.1 5 2.1s5-.94 5-2.1V3.6\"/><path d=\"M3 8c0 1.16 2.24 2.1 5 2.1s5-.94 5-2.1\"/></svg></span><span class=\"ds-tree-name\">dbviewer_db</span></span><ul><li class=\"ds-tree-node\"><span class=\"ds-tree-label\"><span class=\"ds-tree-toggle\">&#9656;</span><span class=\"ds-tree-icon\"><svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 4.2a1 1 0 0 1 1-1h3.2l1.3 1.6H13a1 1 0 0 1 1 1v6.6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z\"/></svg></span><span class=\"ds-tree-name\">public</span></span></li></ul></li></ul>",
+      "css": ".ds-tree, .ds-tree ul { list-style: none; margin: 0; padding-left: 0; } .ds-tree ul { padding-left: 16px; margin-left: 8px; border-left: 1px solid rgba(255,255,255,0.08); } .ds-tree-label { display: flex; align-items: center; gap: 6px; padding: 2px 8px; cursor: pointer; border-radius: 4px; white-space: nowrap; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #FFFFFF; transition: background 120ms ease; } .ds-tree-label:hover { background: #43434F; } .ds-tree-label:focus-visible { outline: 2px solid #FF6B2C; outline-offset: -2px; } .ds-tree-toggle { width: 12px; display: inline-flex; justify-content: center; color: #A8A8B8; font-size: 11px; transition: transform 120ms ease; } .ds-tree-node--expanded > .ds-tree-label .ds-tree-toggle { transform: rotate(90deg); } .ds-tree-icon { display: inline-flex; color: #A8A8B8; } .ds-tree-icon svg { width: 14px; height: 14px; display: block; }"
+    },
+    {
+      "name": "Data Table Row",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Строка таблицы аудита и подключений. Технические колонки моноширинные, числовые выровнены вправо, длинный SQL обрезается многоточием и не раздвигает таблицу.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Время</th><th>SQL</th><th class=\"ds-col-num\">Длительность</th><th>Статус</th></tr></thead><tbody><tr><td class=\"ds-cell-mono\">09.08.2026 13:12:55</td><td class=\"ds-cell-sql\"><code>select * from catalog.tb_banners</code></td><td class=\"ds-cell-mono ds-col-num\">116 мс</td><td><span class=\"ds-badge ds-badge--ok\">OK</span></td></tr></tbody></table>",
+      "css": ".ds-table { width: 100%; border-collapse: separate; border-spacing: 0; background: #363640; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; overflow: hidden; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #FFFFFF; } .ds-table th, .ds-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); } .ds-table th { background: #3A3A45; color: #A8A8B8; font-weight: 500; font-size: 12px; letter-spacing: 0.02em; } .ds-table tbody tr:last-child td { border-bottom: none; } .ds-table tbody tr:hover td { background: #43434F; } .ds-cell-mono { font-family: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace; font-size: 12px; } .ds-col-num { text-align: right; white-space: nowrap; width: 1%; } .ds-cell-sql { width: 100%; max-width: 0; } .ds-cell-sql code { display: block; font-family: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }"
+    },
+    {
+      "name": "Transaction Indicator",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Состояние транзакции в тулбаре редактора. Открытая транзакция — роль warning, а не акцент: это то, что пользователь обязан заметить, но не то, на что он нажимает.",
+      "html": "<div class=\"ds-tx-row\"><span class=\"ds-tx\"><span class=\"ds-tx-dot\"></span>нет транзакции</span><span class=\"ds-tx ds-tx--active\"><span class=\"ds-tx-dot\"></span>транзакция открыта</span></div>",
+      "css": ".ds-tx-row { display: flex; gap: 24px; } .ds-tx { display: inline-flex; align-items: center; gap: 6px; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #A8A8B8; } .ds-tx-dot { width: 8px; height: 8px; border-radius: 9999px; background: #A8A8B8; flex: 0 0 auto; } .ds-tx--active { color: #FFB02E; } .ds-tx--active .ds-tx-dot { background: #FFB02E; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Precision Instrument",
+    "overview": "WebDbViewer — пульт доступа к базам данных, а не витрина. Как осциллограф или логический анализатор, система существует ради данных, которые через неё проходят: объекты схемы, текст запроса, строки результата, запись в журнале аудита. Визуальный язык сдержан намеренно: плоские тональные поверхности, разделённые hairline-границами, единственный хроматический акцент — Ember Orange — зарезервирован строго для действий и интерактивных элементов.\n\nСистема поддерживает два полноценных режима: тёмный для долгой работы в редакторе, светлый для разбора инцидентов и чтения журнала аудита. Выбор живёт в localStorage под ключом wdv-theme. Оба режима сохраняют полную семантику и иерархию.\n\nСистема отвергает четыре паттерна: шаблонные Bootstrap/Material admin-панели с их серо-синей безликостью; перегруженные дашборды без иерархии; retro-терминальную эстетику с зелёным текстом на чёрном; neumorphism в любом виде.",
+    "keyCharacteristics": [
+      "Плоская elevation: тональные уровни фона и границы 1px; box-shadow только у overlay-элементов",
+      "Единственный акцент: Ember Orange помечает действие, но никогда — текущее местоположение в навигации",
+      "Семантические цвета: статус запроса, режим подключения и состояние транзакции всегда дублируются текстом",
+      "Моноширинная типографика для всего, что читается посимвольно: SQL, имя объекта, длительность, число строк, IP",
+      "Две полноценные темы с единым источником истины в токенах; компоненты со своим CSS читают те же переменные"
+    ],
+    "rules": [
+      { "name": "The One Voice Rule",            "body": "Ember Orange — единственный брендовый цвет на экране, и он означает ровно одно: 'здесь можно действовать'. Главная кнопка, активная вкладка, кольцо фокуса, чекбокс, активный разделитель. Он не помечает текущий раздел навигации: местоположение передаётся насыщенностью текста и нейтральной подложкой.", "section": "colors" },
+      { "name": "The Semantic Immutability Rule", "body": "Пять семантических ролей принадлежат статусу запроса, режиму подключения и состоянию транзакции. Бейдж PROD и бейдж 'Ошибка' — разные роли и разные классы, даже когда оба красные. Статус всегда дублируется текстом.", "section": "colors" },
+      { "name": "The Verified Contrast Rule",     "body": "Токен считается принятым только после проверки на фактическом рендере против всех трёх уровней поверхности, включая hover-подложку строки — самый узкий случай. Проверенный минимум системы: 4.79:1 в тёмной теме, 5.11:1 в светлой. Канонические значения палитры-предка (#8A8A9A, #7D7D8A) этой проверки не проходят и в системе не используются.", "section": "colors" },
+      { "name": "The Mono-for-Data Rule",         "body": "Любое значение, которое читается посимвольно — SQL, имя схемы и таблицы, длительность, число строк, IP, временная метка, содержимое ячейки результата — рендерится моноширинным. Числовые колонки выравниваются по правому краю.", "section": "typography" },
+      { "name": "The Hairline Rule",              "body": "Соседние поверхности разделяются тональным контрастом и границей 1px. Статичные поверхности — карточки, панели, поля, кнопки в покое — не имеют box-shadow вообще.", "section": "elevation" },
+      { "name": "The Overlay-Only Shadow Rule",   "body": "Box-shadow допустим только у элементов, временно перекрывающих контент: модалка, автодополнение, тост, попап ячейки. Исключение — inset-кольцо выделенной ячейки грида, где настоящая граница сдвинула бы разметку виртуализованной строки.", "section": "elevation" },
+      { "name": "The Single Theme Owner Rule",    "body": "Тему задаёт атрибут data-theme на <html> плюс localStorage под ключом wdv-theme; переключение — через [data-theme-toggle]. Вторая реализация запрещена: параллельная схема на классе body уже приводила к светлому гриду в тёмном приложении.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do использовать Ember Orange только для интерактивных элементов: главной кнопки, активной вкладки, кольца фокуса, чекбокса.",
+      "Do рендерить моноширинным всё, что читается посимвольно, и выравнивать числовые колонки вправо.",
+      "Do разделять поверхности тональным контрастом и границей 1px; box-shadow только у overlay.",
+      "Do проверять новый цвет на фактическом рендере против --bg, --bg-panel и --bg-hover, а не только против одного фона.",
+      "Do дублировать статус текстом: цвет — второй канал, не единственный.",
+      "Do держать цвета в токенах: компонент, который инжектит свой CSS (грид, тосты), обязан читать var(--…).",
+      "Do использовать prefers-reduced-motion — отключать все transition и animation, сохраняя функциональность."
+    ],
+    "donts": [
+      "Don't использовать neumorphism ни в каком виде: парные тени, inset-тени как материал, 'выдавленные' поверхности.",
+      "Don't использовать border-left или border-right больше 1px как цветной акцент на карточках, строках или алертах.",
+      "Don't ставить белый текст на Ember Orange: 2.8:1. Только accent-ink (#1A1A20).",
+      "Don't помечать акцентом текущий раздел навигации — он спорит с главной кнопкой экрана.",
+      "Don't применять background-clip: text с градиентом.",
+      "Don't использовать glassmorphism как декорацию.",
+      "Don't добавлять emoji в интерфейс — только штриховые SVG из общего набора.",
+      "Don't создавать вложенные карточки.",
+      "Don't заводить вторую реализацию темы.",
+      "Don't менять высоту строки грида: она зашита в математику виртуального скролла."
+    ]
+  }
+}

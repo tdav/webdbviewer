@@ -3,6 +3,7 @@
 @model WebDbViewer.Web.Pages.Editor.EditorIndexModel
 @{
     ViewData["Title"] = "SQL-редактор";
+    var defaultDs = Model.DataSources.FirstOrDefault();
 }
 
 <div class="workbench">
@@ -71,63 +72,89 @@
                 <div id="editor-tabs-list" style="display:flex;gap:2px">
                     <button type="button" class="editor-tab-btn active" data-tab="tab-1">Запрос 1</button>
                 </div>
-                <button type="button" class="btn btn-ghost btn-sm" title="Новая вкладка"
+                <button type="button" class="btn btn-ghost btn-sm btn-icon"
+                        aria-label="Новая вкладка"
+                        data-tip="Открыть ещё одну вкладку запроса"
                         hx-get="/editor?handler=Tab"
                         hx-vals='js:{index: document.querySelectorAll("#editor-tabs-list .editor-tab-btn").length + 1}'
                         hx-target="#editor-panes"
-                        hx-swap="beforeend">＋</button>
+                        hx-swap="beforeend">@UiIcons.Plus</button>
                 <span class="htmx-indicator">…</span>
             </div>
 
             <div class="editor-toolbar">
-                <button type="button" id="btn-run" class="btn btn-primary" title="Выполнить текущий statement (Ctrl+Enter)" data-action="run">
-                    &#9654; Выполнить
-                </button>
-                <button type="button" id="btn-run-script" class="btn" title="Выполнить весь скрипт (Alt+X)" data-action="run-script">
-                    &#9654;&#9654; Выполнить скрипт
-                </button>
-                <button type="button" id="btn-cancel" class="btn btn-danger" title="Отменить выполняющийся запрос" data-action="cancel" disabled>
-                    &#9632; Отмена
-                </button>
+                @* Кнопки иконочные: подпись живёт в aria-label (доступное имя) и
+                   data-tip (видимая подсказка), горячая клавиша — в data-tip-keys. *@
+                <button type="button" id="btn-run" class="btn btn-primary btn-icon" data-action="run"
+                        aria-label="Выполнить запрос"
+                        data-tip="Выполнить запрос под курсором"
+                        data-tip-keys="Ctrl+Enter">@UiIcons.Play</button>
+                <button type="button" id="btn-run-script" class="btn btn-icon" data-action="run-script"
+                        aria-label="Выполнить скрипт"
+                        data-tip="Выполнить все запросы во вкладке подряд"
+                        data-tip-keys="Alt+X">@UiIcons.PlayScript</button>
+                <button type="button" id="btn-cancel" class="btn btn-danger btn-icon" data-action="cancel" aria-disabled="true"
+                        aria-label="Остановить выполнение"
+                        data-tip="Прервать выполняющийся запрос">@UiIcons.Stop</button>
 
                 <span class="sep"></span>
 
                 <label for="editor-ds" style="margin:0">Датасорс</label>
                 <select id="editor-ds" name="ds" data-role="datasource-select"
-                        hx-get="/editor?handler=Schemas"
+                        hx-get="/editor?handler=Scope"
                         hx-trigger="change"
-                        hx-target="#editor-schema"
+                        hx-target="#editor-scope"
                         hx-swap="innerHTML">
                     @foreach (var ds in Model.DataSources)
                     {
-                        <option value="@ds.Id">@ds.Name@(ds.IsProduction ? " ⚠" : "")</option>
+                        @* data-kind — диалект для CodeMirror при переключении датасорса *@
+                        <option value="@ds.Id" data-kind="@ds.Kind.ToString().ToLowerInvariant()">@ds.Name@(ds.IsProduction ? " ⚠" : "")</option>
                     }
                 </select>
 
-                <label for="editor-schema" style="margin:0">Схема</label>
-                <select id="editor-schema" name="schema" data-role="schema-select">
-                    <option value="">— по умолчанию —</option>
-                </select>
+                @* База и схема грузятся вместе: смена датасорса или базы перерисовывает оба списка *@
+                <span id="editor-scope" style="display:contents"
+                      hx-get="/editor?handler=Scope"
+                      hx-trigger="load"
+                      hx-include="#editor-ds"
+                      hx-swap="innerHTML">
+                    <label for="editor-schema" style="margin:0">Схема</label>
+                    <select id="editor-schema" name="schema" data-role="schema-select">
+                        <option value="">— по умолчанию —</option>
+                    </select>
+                </span>
 
                 <span class="sep"></span>
 
-                <label class="checkbox-field" title="Автоматически подтверждать каждый statement">
+                @* Переключатель и индикатор — не кнопки: у них есть состояние,
+                   которое подпись и обязана показывать. Текст остаётся. *@
+                <label class="checkbox-field" data-tip="Подтверждать каждый запрос сразу, без явного COMMIT">
                     <input type="checkbox" id="editor-autocommit" data-role="autocommit" checked />
                     Auto-commit
                 </label>
-                <span class="tx-indicator" id="tx-indicator" data-role="tx-indicator" title="Состояние транзакции">
+                <span class="tx-indicator" id="tx-indicator" data-role="tx-indicator" data-tip="Состояние транзакции в текущей сессии">
                     <span class="tx-dot"></span><span class="tx-text">нет транзакции</span>
                 </span>
-                <button type="button" id="btn-commit" class="btn btn-sm" data-action="commit" disabled title="Подтвердить транзакцию">Commit</button>
-                <button type="button" id="btn-rollback" class="btn btn-sm" data-action="rollback" disabled title="Откатить транзакцию">Rollback</button>
+                @* Тот же размер, что у остальных иконок тулбара: в ряду одинаковых
+                   пиктограмм разнокалиберность читается как небрежность, а не как иерархия. *@
+                <button type="button" id="btn-commit" class="btn btn-icon" data-action="commit" aria-disabled="true"
+                        aria-label="Зафиксировать транзакцию"
+                        data-tip="COMMIT: сохранить изменения открытой транзакции">@UiIcons.Commit</button>
+                <button type="button" id="btn-rollback" class="btn btn-icon" data-action="rollback" aria-disabled="true"
+                        aria-label="Откатить транзакцию"
+                        data-tip="ROLLBACK: отменить изменения открытой транзакции">@UiIcons.Rollback</button>
             </div>
 
             <div class="editor-tab-panes" id="editor-panes">
                 <div class="editor-pane active" id="tab-1" data-tab-id="tab-1">
+                    @* data-sql-editor — единственный признак SQL-редактора: по нему editor.js
+                       поднимает CodeMirror 6. Другие атрибуты для этой цели не заводить. *@
                     <textarea class="sql-editor-source"
-                              data-editor="sql"
+                              data-sql-editor
                               data-tab-id="tab-1"
-                              data-ds-id="@(Model.DataSources.FirstOrDefault()?.Id.ToString() ?? "")"
+                              data-ds-id="@(defaultDs?.Id.ToString() ?? "")"
+                              data-dialect="@(defaultDs?.Kind.ToString().ToLowerInvariant() ?? "postgres")"
+                              data-grid-target="#results-grid"
                               placeholder="-- Введите SQL-запрос…&#10;-- Ctrl+Enter — выполнить, Alt+X — выполнить скрипт"></textarea>
                 </div>
             </div>
@@ -142,7 +169,9 @@
                 <button type="button" class="editor-tab-btn" data-results-tab="messages">Сообщения</button>
             </div>
             <div class="results-body" id="results-container" data-role="results">
-                <div class="results-placeholder">Здесь появятся результаты запроса. Выполните запрос: Ctrl+Enter.</div>
+                @* data-result-grid — селектор, по которому grid.js создаёт виртуализованный грид
+                   и подключается к SSE-стриму результатов *@
+                <div id="results-grid" data-result-grid></div>
             </div>
             <div class="results-status" id="results-status" data-role="results-status">Готово</div>
         </section>

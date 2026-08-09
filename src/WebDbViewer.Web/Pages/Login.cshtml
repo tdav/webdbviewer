@@ -10,6 +10,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Вход — WebDbViewer</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/css/app.css" />
     <script>
         (function () {
@@ -23,7 +24,10 @@
 <body>
     <div class="login-page">
         <form method="post" class="login-card" autocomplete="off">
-            <h1>&#128451; WebDbViewer</h1>
+            <h1>
+                <span class="brand-icon">@UiIcons.Brand</span>
+                WebDbViewer
+            </h1>
             @if (Model.ErrorMessage is not null)
             {
                 <div class="alert alert-error">@Model.ErrorMessage</div>
@@ -37,8 +41,13 @@
                 <input type="password" id="password" name="password" required />
             </div>
             <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
-            <button type="submit" class="btn btn-primary">Войти</button>
+            <button type="submit" class="btn btn-primary btn-icon"
+                    aria-label="Войти"
+                    data-tip="Войти в систему">@UiIcons.Login</button>
         </form>
     </div>
+    @* app.js нужен здесь ради подсказок: без него иконочная кнопка входа
+       осталась бы без единственного видимого объяснения. *@
+    <script src="/js/app.js" asp-append-version="true"></script>
 </body>
 </html>

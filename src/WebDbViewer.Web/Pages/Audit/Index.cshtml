@@ -11,8 +11,7 @@
           hx-target="#audit-results"
           hx-swap="innerHTML"
           hx-trigger="submit, load"
-          class="data-toolbar"
-          style="border:1px solid var(--border);border-radius:8px;margin-bottom:14px">
+          class="data-toolbar data-toolbar--card">
         <div class="field">
             <label for="audit-from">С даты</label>
             <input type="date" id="audit-from" name="from" value="@Model.DefaultFrom" />
@@ -35,7 +34,9 @@
                 }
             </select>
         </div>
-        <button type="submit" class="btn btn-primary">Показать</button>
+        <button type="submit" class="btn btn-primary btn-icon"
+                aria-label="Показать записи"
+                data-tip="Показать записи журнала за выбранный период">@UiIcons.Filter</button>
         <span class="htmx-indicator">Загрузка…</span>
     </form>
 

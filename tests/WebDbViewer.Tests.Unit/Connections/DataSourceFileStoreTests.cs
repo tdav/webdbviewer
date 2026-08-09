@@ -41,6 +41,37 @@ public class DataSourceFileStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAndGet_RoundTripsAllowAllSchemas()
+    {
+        using var store = new DataSourceFileStore(FilePath);
+        var restricted = NewConfig("pg-restricted") with { AllowAllSchemas = false };
+
+        await store.SaveAsync(restricted, CancellationToken.None);
+        var loaded = await store.GetAsync(restricted.Id, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.False(loaded.AllowAllSchemas);
+    }
+
+    [Fact]
+    public async Task Load_LegacyJsonWithoutAllowAllSchemas_DefaultsToTrue()
+    {
+        // Датасорсы, сохранённые до появления флага, должны сохранить прежнее поведение.
+        var id = Guid.NewGuid();
+        Directory.CreateDirectory(_dir);
+        await File.WriteAllTextAsync(FilePath, $$"""
+            [{"id":"{{id}}","name":"legacy","kind":"Postgres","host":"localhost","port":5432,
+              "database":"demo","username":"app"}]
+            """);
+
+        using var store = new DataSourceFileStore(FilePath);
+        var loaded = await store.GetAsync(id, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.True(loaded.AllowAllSchemas);
+    }
+
+    [Fact]
     public async Task Persistence_SurvivesStoreRecreation()
     {
         var config = NewConfig();

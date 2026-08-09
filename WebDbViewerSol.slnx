@@ -7,7 +7,7 @@
     <Project Path="src/WebDbViewer.Providers.Oracle/WebDbViewer.Providers.Oracle.csproj" />
     <Project Path="src/WebDbViewer.Providers.Postgres/WebDbViewer.Providers.Postgres.csproj" />
     <Project Path="src/WebDbViewer.Storage.Postgres/WebDbViewer.Storage.Postgres.csproj" />
-    <Project Path="src/WebDbViewer.Web/WebDbViewer.Web.csproj" />
+    <Project Path="src/WebDbViewer.Web/DbViewer.App.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/WebDbViewer.Tests.Integration/WebDbViewer.Tests.Integration.csproj" />

@@ -35,7 +35,7 @@ public class DbSessionManagerTests
         var config = NewConfig();
         store.Add(config);
 
-        var session = await manager.GetOrCreateAsync("ivan", config.Id, CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
 
         Assert.Equal(config.Id, session.DataSourceId);
         Assert.Equal("ivan", session.UserName);
@@ -52,11 +52,76 @@ public class DbSessionManagerTests
         var config = NewConfig();
         store.Add(config);
 
-        var s1 = await manager.GetOrCreateAsync("ivan", config.Id, CancellationToken.None);
-        var s2 = await manager.GetOrCreateAsync("ivan", config.Id, CancellationToken.None);
+        var s1 = await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
+        var s2 = await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
 
         Assert.Same(s1, s2);
         Assert.Equal(1, provider.OpenCount);
+    }
+
+    [Fact]
+    public async Task GetOrCreate_OtherDatabase_OpensSeparateSession()
+    {
+        var (manager, store, provider) = CreateManager();
+        var config = NewConfig();
+        store.Add(config);
+
+        var primary = await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
+        var other = await manager.GetOrCreateAsync("ivan", config.Id, "cafe_db", CancellationToken.None);
+
+        Assert.NotSame(primary, other);
+        Assert.Equal("db", primary.Database);
+        Assert.True(primary.IsPrimary);
+        Assert.Equal("cafe_db", other.Database);
+        Assert.False(other.IsPrimary);
+        Assert.Equal(2, provider.OpenCount);
+        Assert.Equal(["db", "cafe_db"], provider.OpenedDatabases);
+    }
+
+    [Fact]
+    public async Task GetOrCreate_SameOtherDatabase_ReusesSession()
+    {
+        var (manager, store, provider) = CreateManager();
+        var config = NewConfig();
+        store.Add(config);
+
+        var s1 = await manager.GetOrCreateAsync("ivan", config.Id, "cafe_db", CancellationToken.None);
+        var s2 = await manager.GetOrCreateAsync("ivan", config.Id, "cafe_db", CancellationToken.None);
+
+        Assert.Same(s1, s2);
+        Assert.Equal(1, provider.OpenCount);
+    }
+
+    [Fact]
+    public async Task GetOrCreate_DatabaseOfConfig_ReusesPrimarySession()
+    {
+        var (manager, store, provider) = CreateManager();
+        var config = NewConfig();
+        store.Add(config);
+
+        var primary = await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
+        var byName = await manager.GetOrCreateAsync("ivan", config.Id, config.Database, CancellationToken.None);
+
+        Assert.Same(primary, byName);
+        Assert.Equal(1, provider.OpenCount);
+    }
+
+    [Fact]
+    public async Task GetOrCreate_LimitReached_EvictsOldestNavigatorSession()
+    {
+        var (manager, store, provider) = CreateManager(new DbSessionOptions { MaxSessionsPerUser = 2 });
+        var config = NewConfig();
+        store.Add(config);
+
+        var primary = await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
+        var first = await manager.GetOrCreateAsync("ivan", config.Id, "cafe_db", CancellationToken.None);
+        var second = await manager.GetOrCreateAsync("ivan", config.Id, "nvr_db", CancellationToken.None);
+
+        // Рабочая сессия сохраняется, вытесняется самая давняя сессия навигатора.
+        Assert.NotNull(await manager.FindAsync(primary.SessionId, CancellationToken.None));
+        Assert.Null(await manager.FindAsync(first.SessionId, CancellationToken.None));
+        Assert.NotNull(await manager.FindAsync(second.SessionId, CancellationToken.None));
+        Assert.Equal(3, provider.OpenCount);
     }
 
     [Fact]
@@ -67,11 +132,11 @@ public class DbSessionManagerTests
         foreach (var c in configs)
             store.Add(c);
 
-        await manager.GetOrCreateAsync("ivan", configs[0].Id, CancellationToken.None);
-        await manager.GetOrCreateAsync("ivan", configs[1].Id, CancellationToken.None);
+        await manager.GetOrCreateAsync("ivan", configs[0].Id, null, CancellationToken.None);
+        await manager.GetOrCreateAsync("ivan", configs[1].Id, null, CancellationToken.None);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => manager.GetOrCreateAsync("ivan", configs[2].Id, CancellationToken.None));
+            () => manager.GetOrCreateAsync("ivan", configs[2].Id, null, CancellationToken.None));
         Assert.Contains("лимит", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -84,9 +149,9 @@ public class DbSessionManagerTests
         store.Add(c1);
         store.Add(c2);
 
-        await manager.GetOrCreateAsync("ivan", c1.Id, CancellationToken.None);
+        await manager.GetOrCreateAsync("ivan", c1.Id, null, CancellationToken.None);
         // Другой пользователь — свой лимит.
-        var other = await manager.GetOrCreateAsync("petr", c2.Id, CancellationToken.None);
+        var other = await manager.GetOrCreateAsync("petr", c2.Id, null, CancellationToken.None);
 
         Assert.Equal("petr", other.UserName);
     }
@@ -100,14 +165,14 @@ public class DbSessionManagerTests
         store.Add(c1);
         store.Add(c2);
 
-        var s1 = await manager.GetOrCreateAsync("ivan", c1.Id, CancellationToken.None);
+        var s1 = await manager.GetOrCreateAsync("ivan", c1.Id, null, CancellationToken.None);
         await manager.CloseAsync(s1.SessionId, CancellationToken.None);
 
         Assert.True(provider.OpenedConnections[0].Disposed);
         Assert.Null(await manager.FindAsync(s1.SessionId, CancellationToken.None));
 
         // Слот освободился — можно открыть новую сессию.
-        var s2 = await manager.GetOrCreateAsync("ivan", c2.Id, CancellationToken.None);
+        var s2 = await manager.GetOrCreateAsync("ivan", c2.Id, null, CancellationToken.None);
         Assert.NotEqual(s1.SessionId, s2.SessionId);
     }
 
@@ -123,7 +188,7 @@ public class DbSessionManagerTests
     {
         var (manager, _, _) = CreateManager();
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => manager.GetOrCreateAsync("ivan", Guid.NewGuid(), CancellationToken.None));
+            () => manager.GetOrCreateAsync("ivan", Guid.NewGuid(), null, CancellationToken.None));
     }
 
     [Fact]
@@ -134,7 +199,7 @@ public class DbSessionManagerTests
         store.Add(config);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => manager.GetOrCreateAsync("ivan", config.Id, CancellationToken.None));
+            () => manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None));
         Assert.Contains("ISecretProtector", ex.Message);
     }
 
@@ -145,7 +210,7 @@ public class DbSessionManagerTests
         var config = NewConfig(protectedPassword: new FakeSecretProtector().Protect("secret"));
         store.Add(config);
 
-        var session = await manager.GetOrCreateAsync("ivan", config.Id, CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
         Assert.NotNull(session);
     }
 
@@ -156,7 +221,7 @@ public class DbSessionManagerTests
         var config = NewConfig();
         store.Add(config);
 
-        var session = await manager.GetOrCreateAsync("ivan", config.Id, CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
         await Task.Delay(50);
 
         var closed = await manager.SweepExpiredAsync();
@@ -173,7 +238,7 @@ public class DbSessionManagerTests
         var config = NewConfig();
         store.Add(config);
 
-        var session = await manager.GetOrCreateAsync("ivan", config.Id, CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
         var closed = await manager.SweepExpiredAsync();
 
         Assert.Equal(0, closed);
@@ -186,7 +251,7 @@ public class DbSessionManagerTests
         var (manager, store, provider) = CreateManager();
         var config = NewConfig();
         store.Add(config);
-        await manager.GetOrCreateAsync("ivan", config.Id, CancellationToken.None);
+        await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
 
         await manager.DisposeAsync();
 
@@ -201,7 +266,7 @@ public class DbSessionManagerTests
         var config = NewConfig();
         store.Add(config);
 
-        var session = await manager.GetOrCreateAsync("ivan", config.Id, CancellationToken.None);
+        var session = await manager.GetOrCreateAsync("ivan", config.Id, null, CancellationToken.None);
 
         await session.BeginTransactionAsync(CancellationToken.None);
         Assert.True(session.InTransaction);
@@ -220,7 +285,7 @@ public class DbSessionManagerTests
     {
         var provider = new FakeDbProvider();
         var connection = (FakeDbConnection)await provider.OpenConnectionAsync(NewConfig(), "", CancellationToken.None);
-        var session = new DbSession(Guid.NewGuid(), "ivan", connection);
+        var session = new DbSession(Guid.NewGuid(), "ivan", connection, "db", isPrimary: true);
 
         await session.BeginTransactionAsync(CancellationToken.None);
         await session.DisposeAsync();

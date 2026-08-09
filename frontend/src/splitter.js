@@ -48,6 +48,23 @@ function splitterSize(el) {
   return size || 6;
 }
 
+// На узких экранах app.css складывает рабочую область по вертикали: навигатор
+// становится верхней полосой, а вертикальный разделитель — горизонтальным.
+// Ширина колонок там не имеет смысла, и inline-стиль отсюда её ломал: навигатор
+// растягивался на всю ширину, и в трек разделителя записывалось значение в
+// сотни пикселей. Ниже брейкпоинта раскладкой владеет только CSS.
+// Значение обязано совпадать с медиазапросом в app.css.
+const STACKED_LAYOUT = window.matchMedia('(max-width: 860px)');
+
+function isStacked() {
+  return STACKED_LAYOUT.matches;
+}
+
+/** Возвращает раскладку под управление CSS: снимает inline-переопределение. */
+function releaseTracks(el, property) {
+  el.style.removeProperty(property);
+}
+
 /** Уведомляет редактор и грид, что доступная площадь изменилась. */
 function notifyResize() {
   document.dispatchEvent(new CustomEvent('wdv:layout-resized'));
@@ -57,6 +74,15 @@ function notifyResize() {
 // --- Ширина навигатора (вертикальный разделитель) ---
 
 function applyNavWidth(workbench, splitter, width) {
+  if (isStacked()) {
+    releaseTracks(workbench, 'grid-template-columns');
+    // В стопке высота навигатора задана в CSS и не регулируется: разделитель
+    // остаётся видимой границей, но перестаёт быть управляющим элементом.
+    splitter.removeAttribute('aria-valuenow');
+    splitter.setAttribute('aria-disabled', 'true');
+    return width;
+  }
+  splitter.removeAttribute('aria-disabled');
   const gap = splitterSize(splitter);
   const max = workbench.clientWidth - gap - MIN_WORKAREA_WIDTH;
   const value = Math.round(clamp(width, MIN_NAV_WIDTH, max));
@@ -218,9 +244,18 @@ function initVerticalSplitter() {
   const workbench = splitter && splitter.closest('.workbench');
   if (!workbench) return;
 
-  const apply = (width) => applyNavWidth(workbench, splitter, width);
-  const saved = readLayout().navWidth;
-  apply(typeof saved === 'number' ? saved : currentNavWidth(workbench));
+  // Последняя ширина в развёрнутой раскладке. В стопке навигатор занимает всю
+  // ширину окна, поэтому читать её из DOM нельзя — при возврате к широкому
+  // экрану панель раздулась бы на весь экран.
+  let wideWidth = readLayout().navWidth;
+  if (typeof wideWidth !== 'number') wideWidth = currentNavWidth(workbench);
+
+  const apply = (width) => {
+    const applied = applyNavWidth(workbench, splitter, width);
+    if (!isStacked()) wideWidth = applied;
+    return applied;
+  };
+  apply(wideWidth);
 
   makeDraggable(
     splitter,
@@ -234,7 +269,9 @@ function initVerticalSplitter() {
   );
 
   // При изменении размера окна пересчитываем ограничения (панель могла стать шире окна).
-  window.addEventListener('resize', () => apply(currentNavWidth(workbench)));
+  window.addEventListener('resize', () => apply(isStacked() ? wideWidth : currentNavWidth(workbench)));
+  // Пересечение брейкпоинта: либо отдать раскладку CSS, либо вернуть сохранённую ширину.
+  STACKED_LAYOUT.addEventListener('change', () => apply(wideWidth));
 }
 
 function initHorizontalSplitter() {

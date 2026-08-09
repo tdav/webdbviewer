@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using WebDbViewer.Core;
 using WebDbViewer.Web.Pages.Shared;
+using WebDbViewer.Web.Services;
 
 namespace WebDbViewer.Web.Pages;
 
@@ -43,22 +44,41 @@ public sealed class TreeModel : PageModel
                 return;
             }
 
+            var userName = User.Identity?.Name ?? "anonymous";
             var segments = SplitPath(path);
-            var session = await _sessions.GetOrCreateAsync(User.Identity?.Name ?? "anonymous", ds, ct);
             var provider = HttpContext.RequestServices
                 .GetRequiredService<IDbProviderRegistry>()
                 .Get(config.Kind);
 
-            var children = await provider.GetChildrenAsync(session.Connection, segments, includeSystem: !hideSystem, ct);
+            // Уровень «базы данных» — только когда подключению разрешены все базы и СУБД их различает.
+            var withDatabaseLevel = config.AllowAllSchemas && provider.SupportsDatabaseLevel;
 
-            Nodes = children
-                .Select(n => new TreeNodeVm
-                {
-                    DsId = ds,
-                    Node = n,
-                    Path = AppendSegment(path, n.Name)
-                })
-                .ToList();
+            // Первый сегмент пути — имя базы; в провайдер уходит путь без него.
+            var database = withDatabaseLevel && segments.Count > 0 ? segments[0] : null;
+            var schemaPath = withDatabaseLevel ? segments.Skip(1).ToList() : segments;
+
+            var session = await _sessions.GetOrCreateAsync(userName, ds, database, ct);
+
+            if (withDatabaseLevel && segments.Count == 0)
+            {
+                var databases = await provider.GetDatabasesAsync(session.Connection, includeSystem: !hideSystem, ct);
+                Nodes = ToNodes(ds, path, databases);
+                return;
+            }
+
+            // Датасорс без права на все схемы: корень фильтруем, вглубь чужой схемы не пускаем.
+            var allowedSchemas = await SchemaScope.ResolveAsync(config, session.Connection, ct);
+            if (schemaPath.Count > 0 && !SchemaScope.IsAllowed(allowedSchemas, schemaPath[0]))
+            {
+                ErrorMessage = "Схема недоступна: подключение ограничено собственной схемой.";
+                return;
+            }
+
+            var children = await provider.GetChildrenAsync(session.Connection, schemaPath, includeSystem: !hideSystem, ct);
+            if (schemaPath.Count == 0)
+                children = SchemaScope.Filter(allowedSchemas, children);
+
+            Nodes = ToNodes(ds, path, children, database);
         }
         catch (Exception ex)
         {
@@ -76,6 +96,16 @@ public sealed class TreeModel : PageModel
         try
         {
             var found = await _metadata.SearchAsync(ds, q.Trim(), limit: 50, ct);
+
+            // Поиск не должен обходить ограничение области видимости схем.
+            var config = await _store.GetAsync(ds, ct);
+            if (config is { AllowAllSchemas: false })
+            {
+                var session = await _sessions.GetOrCreateAsync(User.Identity?.Name ?? "anonymous", ds, null, ct);
+                var allowedSchemas = await SchemaScope.ResolveAsync(config, session.Connection, ct);
+                found = SchemaScope.Filter(allowedSchemas, found);
+            }
+
             Nodes = found
                 .Select(n => new TreeNodeVm
                 {
@@ -92,6 +122,19 @@ public sealed class TreeModel : PageModel
             ErrorMessage = $"Ошибка поиска: {ex.Message}";
         }
     }
+
+    /// <summary>Преобразует объекты БД в модели узлов дерева (путь к детям = путь родителя + имя узла).</summary>
+    private static IReadOnlyList<TreeNodeVm> ToNodes(
+        Guid ds, string? parentPath, IReadOnlyList<DbObjectNode> nodes, string? database = null) =>
+        nodes
+            .Select(n => new TreeNodeVm
+            {
+                DsId = ds,
+                Node = n,
+                Database = database,
+                Path = AppendSegment(parentPath, n.Name)
+            })
+            .ToList();
 
     /// <summary>Разбирает путь узла на сегменты (каждый URL-экранирован).</summary>
     public static IReadOnlyList<string> SplitPath(string? path) =>

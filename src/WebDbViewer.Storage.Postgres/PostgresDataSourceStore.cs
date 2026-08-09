@@ -14,7 +14,7 @@ public sealed class PostgresDataSourceStore : IDataSourceStore
     private const string Columns = """
         id, name, kind, host, port, database, username, protected_password,
         read_only, is_production, use_ssl, connect_timeout_seconds,
-        command_timeout_seconds, max_pool_size_per_user, extra
+        command_timeout_seconds, max_pool_size_per_user, extra, allow_all_schemas
         """;
 
     private readonly PostgresMetaStore meta;
@@ -58,11 +58,11 @@ public sealed class PostgresDataSourceStore : IDataSourceStore
             INSERT INTO {meta.Schema}.datasources
                 (id, name, kind, host, port, database, username, protected_password,
                  read_only, is_production, use_ssl, connect_timeout_seconds,
-                 command_timeout_seconds, max_pool_size_per_user, extra, updated_at)
+                 command_timeout_seconds, max_pool_size_per_user, extra, allow_all_schemas, updated_at)
             VALUES
                 (@id, @name, @kind, @host, @port, @database, @username, @password,
                  @readOnly, @isProduction, @useSsl, @connectTimeout,
-                 @commandTimeout, @maxPool, @extra, now())
+                 @commandTimeout, @maxPool, @extra, @allowAllSchemas, now())
             ON CONFLICT (id) DO UPDATE SET
                 name                    = excluded.name,
                 kind                    = excluded.kind,
@@ -78,6 +78,7 @@ public sealed class PostgresDataSourceStore : IDataSourceStore
                 command_timeout_seconds = excluded.command_timeout_seconds,
                 max_pool_size_per_user  = excluded.max_pool_size_per_user,
                 extra                   = excluded.extra,
+                allow_all_schemas       = excluded.allow_all_schemas,
                 updated_at              = now()
             """, connection);
 
@@ -95,6 +96,7 @@ public sealed class PostgresDataSourceStore : IDataSourceStore
         cmd.Parameters.AddWithValue("connectTimeout", config.ConnectTimeoutSeconds);
         cmd.Parameters.AddWithValue("commandTimeout", config.CommandTimeoutSeconds);
         cmd.Parameters.AddWithValue("maxPool", config.MaxPoolSizePerUser);
+        cmd.Parameters.AddWithValue("allowAllSchemas", config.AllowAllSchemas);
         cmd.Parameters.Add(new NpgsqlParameter("extra", NpgsqlDbType.Jsonb)
         {
             Value = config.Extra is null or { Count: 0 }
@@ -133,5 +135,6 @@ public sealed class PostgresDataSourceStore : IDataSourceStore
         Extra = reader.IsDBNull(14)
             ? null
             : JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(14)),
+        AllowAllSchemas = reader.GetBoolean(15),
     };
 }

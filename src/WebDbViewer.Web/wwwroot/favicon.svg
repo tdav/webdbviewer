@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+    <!-- Знак приложения: тот же цилиндр, что в топбаре, на тёмной подложке.
+         Подложка нужна: на тёмной панели вкладок голый штрих теряется. -->
+    <rect width="32" height="32" rx="7" fill="#2D2D35"/>
+    <g fill="none" stroke="#FF6B2C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="16" cy="10" rx="8" ry="3.4"/>
+        <path d="M8 10v12c0 1.9 3.6 3.4 8 3.4s8-1.5 8-3.4V10"/>
+        <path d="M8 16c0 1.9 3.6 3.4 8 3.4s8-1.5 8-3.4"/>
+    </g>
+</svg>

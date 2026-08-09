@@ -15,6 +15,10 @@
             {
                 <span class="badge badge-ro">RO</span>
             }
+            @if (Model.IsOtherDatabase)
+            {
+                <span class="badge badge-scope" title="Объект в другой базе данных сервера">@Model.Database</span>
+            }
             <span class="tree-comment" style="font-size:13px">@Model.Schema.@Model.Table</span>
         </div>
 
@@ -43,10 +47,12 @@
                 <option>1000</option>
             </select>
         </div>
-        <button type="button" id="data-apply" class="btn btn-primary" data-action="apply-filter" title="Применить фильтр и сортировку">
-            Применить
-        </button>
-        <button type="button" id="data-refresh" class="btn" data-action="refresh" title="Обновить данные">&#8635; Обновить</button>
+        <button type="button" id="data-apply" class="btn btn-primary btn-icon" data-action="apply-filter"
+                aria-label="Применить фильтр"
+                data-tip="Перечитать таблицу с заданным условием и сортировкой">@UiIcons.Filter</button>
+        <button type="button" id="data-refresh" class="btn btn-icon" data-action="refresh"
+                aria-label="Обновить данные"
+                data-tip="Перечитать таблицу, сохранив текущий фильтр">@UiIcons.Refresh</button>
     </div>
 
     @* Контейнер виртуализованного грида: заполняется grid.js по data-атрибутам *@
@@ -55,7 +61,8 @@
          data-grid="table-data"
          data-ds-id="@Model.DsId"
          data-schema="@Model.Schema"
-         data-table="@Model.Table">
+         data-table="@Model.Table"
+         data-database="@(Model.IsOtherDatabase ? Model.Database : null)">
         <div class="results-placeholder">Загрузка данных таблицы…</div>
     </div>
 

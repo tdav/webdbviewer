@@ -41,6 +41,9 @@ public sealed partial class PostgresProvider : IDbProvider
 
     public DbKind Kind => DbKind.Postgres;
 
+    /// <summary>В PostgreSQL соединение привязано к одной базе — уровень «базы данных» в дереве нужен.</summary>
+    public bool SupportsDatabaseLevel => true;
+
     public string? RowAddressPseudoColumn => "ctid";
 
     // ---------------------------------------------------------------- Подключение
@@ -120,6 +123,40 @@ public sealed partial class PostgresProvider : IDbProvider
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
             result.Add(reader.GetString(0));
+        return result;
+    }
+
+    public async Task<IReadOnlyList<DbObjectNode>> GetDatabasesAsync(
+        DbConnection connection, bool includeSystem, CancellationToken ct)
+    {
+        // Шаблонные базы и базы, запрещённые к подключению, не показываем никогда; служебной
+        // базы «postgres» это не касается — она рабочая, поэтому includeSystem здесь ни на что не влияет.
+        var sql = """
+            SELECT d.datname,
+                   shobj_description(d.oid, 'pg_database') AS comment,
+                   d.datname = current_database() AS is_current
+            FROM pg_catalog.pg_database d
+            WHERE d.datallowconn AND NOT d.datistemplate
+            ORDER BY d.datname
+            """;
+
+        var result = new List<DbObjectNode>();
+        await using var cmd = CreateCommand(connection, sql);
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            var name = reader.GetString(0);
+            result.Add(new DbObjectNode
+            {
+                Name = name,
+                Type = DbObjectType.Database,
+                HasChildren = true,
+                Comment = reader.IsDBNull(1) ? null : reader.GetString(1),
+                Attributes = reader.GetBoolean(2)
+                    ? new Dictionary<string, string> { ["current"] = "true" }
+                    : null,
+            });
+        }
         return result;
     }
 

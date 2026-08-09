@@ -132,10 +132,15 @@ internal sealed class SemanticCompleter
             if (found is not null)
             {
                 var src = FindColumns(found, snapshots);
-                if (src is null)
-                    return false; // таблица не найдена в кэше — пусть отработает v0
-                AddColumnList(items, src.Value, q, wordPrefix, dialect);
-                return true;
+                if (src is not null)
+                {
+                    AddColumnList(items, src.Value, q, wordPrefix, dialect);
+                    return true;
+                }
+                // Таблицы нет в кэше. Частый случай: «FROM schema.» — анализатор областей
+                // видимости принимает начатое квалифицированное имя за таблицу «schema».
+                // Поэтому не выходим сразу, а пробуем CTE и схему ниже; если и там пусто —
+                // вернём false и отработает v0-эвристика.
             }
 
             // 2) CTE, ещё не упомянутый во FROM.

@@ -141,6 +141,12 @@ public sealed partial class OracleProvider : IDbProvider
 
     // ---------------------------------------------------------------- Интроспекция
 
+    /// <summary>В Oracle подключение охватывает весь инстанс: отдельного уровня «базы данных» в дереве нет.</summary>
+    public bool SupportsDatabaseLevel => false;
+
+    public Task<IReadOnlyList<DbObjectNode>> GetDatabasesAsync(DbConnection connection, bool includeSystem, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<DbObjectNode>>([]);
+
     public async Task<IReadOnlyList<string>> GetSchemasAsync(DbConnection connection, bool includeSystem, CancellationToken ct)
     {
         // В 12c+ фильтруем по ORACLE_MAINTAINED; на старых версиях — по статическому списку.

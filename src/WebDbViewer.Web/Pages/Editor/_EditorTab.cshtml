@@ -4,11 +4,15 @@
     + кнопка вкладки (OOB-swap в #editor-tabs-list).
 *@
 <div class="editor-pane" id="@Model.TabId" data-tab-id="@Model.TabId">
+    @* Атрибуты должны совпадать с Index.cshtml: data-sql-editor поднимает CodeMirror 6,
+       data-grid-target указывает грид результатов. *@
     <textarea class="sql-editor-source"
-              data-editor="sql"
+              data-sql-editor
               data-tab-id="@Model.TabId"
               data-ds-id="@(Model.DefaultDsId?.ToString() ?? "")"
-              placeholder="-- Введите SQL-запрос…"></textarea>
+              data-dialect="@(Model.DefaultDialect ?? "postgres")"
+              data-grid-target="#results-grid"
+              placeholder="-- Введите SQL-запрос…&#10;-- Ctrl+Enter — выполнить, Alt+X — выполнить скрипт"></textarea>
 </div>
 <button type="button" class="editor-tab-btn" data-tab="@Model.TabId"
         hx-swap-oob="beforeend:#editor-tabs-list">

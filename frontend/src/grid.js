@@ -12,38 +12,74 @@ const ROW_HEIGHT = 28;     // фиксированная высота строк
 const BUFFER_ROWS = 12;    // буфер видимых строк сверху/снизу
 const LOAD_THRESHOLD = 400; // px до низа — момент подгрузки следующей страницы
 
-// --- Стили грида (self-contained, чтобы не зависеть от чужих CSS) ---
+// Иконки для элементов, которые грид создаёт сам (запасная панель правки,
+// попап многострочного значения). Источник истины набора — UiIcons.cs; здесь
+// повторены только те, что нужны гриду, чтобы разметка из JS и из Razor
+// выглядела одинаково.
+const ICON_ATTRS =
+  'class="ui-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+const ICONS = {
+  save: `<svg ${ICON_ATTRS}><path d="M3.4 2.6h7.2l2.8 2.8v8a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V3.6a1 1 0 0 1 1-1z"/><path d="M5.2 2.6v3.6h5.2V2.6"/><path d="M5.2 14.4v-4.2h5.6v4.2"/></svg>`,
+  discard: `<svg ${ICON_ATTRS}><path d="M2.6 4.2v3.6h3.6"/><path d="M3.3 7.6a5.2 5.2 0 1 1 1.2 4.3"/></svg>`,
+  addRow: `<svg ${ICON_ATTRS}><path d="M2.4 4.6h11.2M2.4 8h6.2M2.4 11.4h4.4"/><path d="M11.6 9.2v5.2M9 11.8h5.2"/></svg>`,
+  deleteRows: `<svg ${ICON_ATTRS}><path d="M2.4 4.6h11.2M2.4 8h6.2M2.4 11.4h4.4"/><path d="M9.8 10 14 14.2M14 10l-4.2 4.2"/></svg>`,
+  confirm: `<svg ${ICON_ATTRS}><path d="M2.8 8.6 6.2 12l7-8"/></svg>`,
+  close: `<svg ${ICON_ATTRS}><path d="M4 4l8 8M12 4l-8 8"/></svg>`,
+};
+
+// --- Стили грида ---
+// Грид берёт цвета из общих токенов app.css (:root и html[data-theme]).
+// Собственной таблицы тем у него нет намеренно: раньше она ключевалась на
+// body.theme-dark, тогда как приложение переключает html[data-theme], и грид
+// оставался светлым в тёмной теме. Фолбэки в var() держат грид читаемым,
+// если он окажется на странице без app.css.
 const GRID_CSS = `
-.wdb-grid{display:flex;flex-direction:column;border:1px solid var(--wdb-border,#c8c8d0);font:13px/1.3 ui-monospace,Consolas,monospace;height:100%;min-height:120px;background:var(--wdb-bg,#fff);color:var(--wdb-fg,#1a1a24)}
-body.theme-dark .wdb-grid,body.dark .wdb-grid{--wdb-bg:#1e1e2e;--wdb-fg:#dcdfe4;--wdb-border:#313244;--wdb-head:#181825;--wdb-sel:#3b4261;--wdb-null:#8a8a99;--wdb-hover:#2a2a3c}
-.wdb-grid-header{display:flex;overflow:hidden;background:var(--wdb-head,#f0f0f4);border-bottom:1px solid var(--wdb-border,#c8c8d0);flex:none;user-select:none}
-.wdb-grid-hcell{flex:none;width:160px;padding:4px 8px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-right:1px solid var(--wdb-border,#c8c8d0);cursor:default}
+.wdb-grid{
+  --wdb-bg:var(--bg-panel,#fff);
+  --wdb-fg:var(--text,#1a1a24);
+  --wdb-border:var(--border,rgba(26,26,46,.12));
+  --wdb-head:var(--bg-panel-alt,#f0f0f4);
+  --wdb-sel:var(--bg-active,rgba(255,107,44,.13));
+  --wdb-null:var(--text-muted,#606070);
+  --wdb-hover:var(--bg-hover,#e4e4ec);
+  --wdb-dirty:var(--warning-bg,rgba(180,83,9,.11));
+  --wdb-del:var(--danger-bg,rgba(220,38,38,.10));
+  --wdb-new:var(--success-bg,rgba(21,128,61,.11));
+  --wdb-mono:var(--mono,ui-monospace,Consolas,monospace);
+  display:flex;flex-direction:column;border:1px solid var(--wdb-border);
+  font:13px/1.3 var(--wdb-mono);height:100%;min-height:120px;
+  background:var(--wdb-bg);color:var(--wdb-fg)
+}
+.wdb-grid-header{display:flex;overflow:hidden;background:var(--wdb-head);border-bottom:1px solid var(--wdb-border);flex:none;user-select:none}
+.wdb-grid-hcell{flex:none;width:160px;padding:4px 8px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-right:1px solid var(--wdb-border);cursor:default}
 .wdb-grid-hcell.sortable{cursor:pointer}
-.wdb-grid-hcell .wdb-type{display:block;font-weight:400;font-size:10px;opacity:.6}
+.wdb-grid-hcell .wdb-type{display:block;font-weight:400;font-size:11px;color:var(--wdb-null)}
 .wdb-grid-viewport{position:relative;overflow:auto;flex:1;outline:none}
 .wdb-grid-spacer{position:absolute;top:0;left:0;width:1px;visibility:hidden}
 .wdb-grid-canvas{position:absolute;top:0;left:0;min-width:100%}
 .wdb-grid-row{display:flex;height:${ROW_HEIGHT}px;box-sizing:border-box}
-.wdb-grid-row:hover{background:var(--wdb-hover,#f5f5fa)}
-.wdb-grid-cell{flex:none;width:160px;padding:4px 8px;box-sizing:border-box;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-right:1px solid var(--wdb-border,#e4e4ea);border-bottom:1px solid var(--wdb-border,#e4e4ea);cursor:default}
-.wdb-grid-cell.selected{background:var(--wdb-sel,#cfe3ff)}
-.wdb-null{color:var(--wdb-null,#9a9aa8);font-style:italic}
-.wdb-grid-status{flex:none;padding:3px 8px;font-size:12px;border-top:1px solid var(--wdb-border,#c8c8d0);background:var(--wdb-head,#f0f0f4);display:flex;gap:12px}
-.wdb-grid-status .error{color:#d33}
-.wdb-grid-cell.dirty{background:var(--wdb-dirty,#fbe8b6);font-weight:600}
-body.theme-dark .wdb-grid,body.dark .wdb-grid{--wdb-dirty:#5a4a1e;--wdb-del:#4a2530;--wdb-new:#1e4030}
-.wdb-grid-row.deleted{background:var(--wdb-del,#f8d7da);text-decoration:line-through;opacity:.6}
-.wdb-grid-row.newrow{background:var(--wdb-new,#d9f2e0)}
+.wdb-grid-row:hover{background:var(--wdb-hover)}
+.wdb-grid-cell{flex:none;width:160px;padding:4px 8px;box-sizing:border-box;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-right:1px solid var(--wdb-border);border-bottom:1px solid var(--wdb-border);cursor:default}
+/* Только тонировка, без рамки: при выделении блока рамка на каждой ячейке
+   превращает область в сетку коробок вместо одного выделенного блока. */
+.wdb-grid-cell.selected{background:var(--wdb-sel)}
+.wdb-null{color:var(--wdb-null);font-style:italic}
+.wdb-grid-status{flex:none;padding:3px 8px;font-size:12px;border-top:1px solid var(--wdb-border);background:var(--wdb-head);color:var(--wdb-null);display:flex;gap:12px}
+.wdb-grid-status .error{color:var(--danger,#dc2626)}
+.wdb-grid-cell.dirty{background:var(--wdb-dirty);font-weight:600}
+.wdb-grid-row.deleted{background:var(--wdb-del);text-decoration:line-through;opacity:.6}
+.wdb-grid-row.newrow{background:var(--wdb-new)}
 .wdb-cell-editor{display:flex;align-items:center;gap:4px;width:100%;height:100%}
-.wdb-cell-editor input[type=text]{flex:1;min-width:0;height:20px;font:inherit;padding:0 4px;border:1px solid #4a7bd0;outline:none;background:var(--wdb-bg,#fff);color:var(--wdb-fg,#1a1a24)}
-.wdb-cell-editor label{display:flex;align-items:center;gap:2px;font-size:10px;cursor:pointer;user-select:none}
-.wdb-edit-panel{flex:none;display:flex;align-items:center;gap:8px;padding:4px 8px;border-top:1px solid var(--wdb-border,#c8c8d0);background:var(--wdb-head,#f0f0f4);font:13px system-ui,sans-serif}
-.wdb-edit-panel button{font:12px system-ui,sans-serif;padding:3px 10px;cursor:pointer}
+.wdb-cell-editor input[type=text]{flex:1;min-width:0;height:20px;font:inherit;padding:0 4px;border:1px solid var(--accent-line,#c25100);outline:none;background:var(--wdb-bg);color:var(--wdb-fg)}
+.wdb-cell-editor label{display:flex;align-items:center;gap:2px;font-size:11px;cursor:pointer;user-select:none}
+.wdb-edit-panel{flex:none;display:flex;align-items:center;gap:8px;padding:4px 8px;border-top:1px solid var(--wdb-border);background:var(--wdb-head);font:13px var(--font-ui,system-ui,sans-serif)}
+.wdb-edit-panel button{font:12px var(--font-ui,system-ui,sans-serif);padding:3px 10px;cursor:pointer}
 .wdb-edit-panel button:disabled{opacity:.5;cursor:default}
-.wdb-popup-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9500;display:flex;align-items:center;justify-content:center}
-.wdb-popup{background:var(--wdb-bg,#fff);color:var(--wdb-fg,#1a1a24);border:1px solid var(--wdb-border,#c8c8d0);border-radius:6px;box-shadow:0 8px 30px rgba(0,0,0,.35);width:560px;max-width:92vw;display:flex;flex-direction:column;font:13px system-ui,sans-serif}
-.wdb-popup-title{padding:8px 12px;font-weight:600;border-bottom:1px solid var(--wdb-border,#c8c8d0)}
-.wdb-popup textarea{margin:10px 12px 4px;min-height:180px;resize:vertical;font:13px ui-monospace,Consolas,monospace;background:var(--wdb-bg,#fff);color:var(--wdb-fg,#1a1a24);border:1px solid var(--wdb-border,#c8c8d0)}
+.wdb-popup-overlay{position:fixed;inset:0;background:rgba(10,10,14,.58);z-index:var(--z-modal,50);display:flex;align-items:center;justify-content:center}
+.wdb-popup{background:var(--wdb-bg);color:var(--wdb-fg);border:1px solid var(--border-strong,rgba(26,26,46,.22));border-radius:var(--radius-xl,12px);box-shadow:var(--shadow-overlay,0 8px 24px rgba(0,0,0,.45));width:560px;max-width:92vw;display:flex;flex-direction:column;font:13px var(--font-ui,system-ui,sans-serif)}
+.wdb-popup-title{padding:8px 12px;font-weight:600;border-bottom:1px solid var(--wdb-border)}
+.wdb-popup textarea{margin:10px 12px 4px;min-height:180px;resize:vertical;font:13px var(--wdb-mono);background:var(--bg-well,#e9e9f1);color:var(--wdb-fg);border:1px solid var(--wdb-border);border-radius:var(--radius-md,6px);padding:6px 8px}
 .wdb-popup-footer{display:flex;align-items:center;gap:8px;padding:8px 12px}
 .wdb-popup-footer .spacer{margin-left:auto}
 `;
@@ -385,6 +421,10 @@ class VirtualGrid {
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
+      // Редактор снимает состояние «выполняется» (кнопка «Отмена», статусбар).
+      document.dispatchEvent(new CustomEvent('webdb:query-finished', {
+        detail: { executionId: this.currentExecutionId },
+      }));
     }
   }
 
@@ -403,6 +443,7 @@ class VirtualGrid {
       schema: this.el.dataset.schema,
       table: this.el.dataset.table,
     });
+    if (this.el.dataset.database) p.set('db', this.el.dataset.database);
     if (this.el.dataset.limit) p.set('limit', this.el.dataset.limit);
     if (this.orderBy) p.set('orderBy', this.orderBy);
     if (this.desc) p.set('desc', 'true');
@@ -470,18 +511,28 @@ class VirtualGrid {
       panel.className = 'wdb-edit-panel';
       panel.setAttribute('data-edit-panel', '');
       panel.hidden = true;
+      // Разметка повторяет партиал DataEditPanel.cshtml: иконка плюс aria-label
+      // и data-tip. Счётчик изменений остаётся видимым — это данные, не подпись.
       panel.innerHTML =
-        '<button type="button" data-edit-action="save" title="Отправить накопленные изменения в базу данных">Сохранить (<span data-edit-count>0</span>)</button>' +
-        '<button type="button" data-edit-action="discard" title="Отбросить все несохранённые изменения">Отменить</button>' +
-        '<button type="button" data-edit-action="add-row" title="Добавить новую строку">+ Строка</button>' +
-        '<button type="button" data-edit-action="delete-rows" title="Пометить выделенные строки на удаление">Удалить строки</button>';
+        `<button type="button" class="btn btn-primary btn-icon btn-icon-count" data-edit-action="save"
+                 aria-label="Сохранить изменения" data-tip="Отправить накопленные изменения в базу данных"
+                 >${ICONS.save}<span class="btn-count" data-edit-count>0</span></button>` +
+        `<button type="button" class="btn btn-icon" data-edit-action="discard"
+                 aria-label="Отменить изменения" data-tip="Отбросить все несохранённые правки"
+                 >${ICONS.discard}</button>` +
+        `<button type="button" class="btn btn-icon" data-edit-action="add-row"
+                 aria-label="Добавить строку" data-tip="Добавить пустую строку в конец таблицы"
+                 >${ICONS.addRow}</button>` +
+        `<button type="button" class="btn btn-icon" data-edit-action="delete-rows"
+                 aria-label="Удалить выделенные строки" data-tip="Пометить выделенные строки на удаление"
+                 >${ICONS.deleteRows}</button>`;
       this.el.appendChild(panel);
     }
     this.editPanel = panel;
     if (panel.dataset.readonly === 'true') this.editable = false;
     panel.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-edit-action]');
-      if (!btn || btn.disabled) return;
+      if (!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true') return;
       switch (btn.dataset.editAction) {
         case 'save': this.saveEdits(); break;
         case 'discard': this.discardEdits(); break;
@@ -501,6 +552,7 @@ class VirtualGrid {
         schema: this.el.dataset.schema,
         table: this.el.dataset.table,
       });
+      if (this.el.dataset.database) p.set('db', this.el.dataset.database);
       const res = await fetch('/api/data/edit/table-info?' + p.toString());
       if (!res.ok) { this.editable = false; this.updateEditPanel(); return; }
       this.tableMeta = await res.json();
@@ -555,9 +607,11 @@ class VirtualGrid {
     const count = this.pendingCount();
     const cnt = p.querySelector('[data-edit-count]');
     if (cnt) cnt.textContent = String(count);
+    // aria-disabled вместо disabled: кнопки панели иконочные и в неактивном
+    // состоянии обязаны оставаться наводимыми, иначе подсказка недостижима.
     const toggle = (action, disabled) => {
       const b = p.querySelector(`[data-edit-action="${action}"]`);
-      if (b) b.disabled = disabled;
+      if (b) b.setAttribute('aria-disabled', String(disabled));
     };
     toggle('save', this.saving || count === 0);
     toggle('discard', this.saving || count === 0);
@@ -682,10 +736,16 @@ class VirtualGrid {
     spacer.className = 'spacer';
     const okBtn = document.createElement('button');
     okBtn.type = 'button';
-    okBtn.textContent = 'ОК';
+    okBtn.className = 'btn btn-primary btn-icon';
+    okBtn.setAttribute('aria-label', 'Применить значение');
+    okBtn.setAttribute('data-tip', 'Применить значение к ячейке');
+    okBtn.innerHTML = ICONS.confirm;
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
-    cancelBtn.textContent = 'Отмена';
+    cancelBtn.className = 'btn btn-icon';
+    cancelBtn.setAttribute('aria-label', 'Отмена');
+    cancelBtn.setAttribute('data-tip', 'Закрыть, не изменяя ячейку');
+    cancelBtn.innerHTML = ICONS.close;
     footer.append(spacer, okBtn, cancelBtn);
 
     popup.append(title, ta, footer);
@@ -832,7 +892,7 @@ class VirtualGrid {
       const res = await fetch('/api/data/edit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dsId: this.el.dataset.dsId, edits }),
+        body: JSON.stringify({ dsId: this.el.dataset.dsId, db: this.el.dataset.database || null, edits }),
       });
       let d = null;
       try { d = await res.json(); } catch (_) { /* не JSON */ }

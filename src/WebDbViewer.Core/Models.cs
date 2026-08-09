@@ -18,6 +18,13 @@ public sealed record DataSourceConfig
     public bool ReadOnly { get; init; }
     public bool IsProduction { get; init; }
     public bool UseSsl { get; init; }
+    /// <summary>
+    /// Разрешён просмотр всех схем/баз данных сервера. Если false — навигатор, поиск и список схем
+    /// ограничены схемой подключения (Oracle — схема пользователя, PostgreSQL — search_path).
+    /// Это ограничение видимости в UI, а не разграничение прав: произвольный SQL по-прежнему
+    /// выполняется с правами пользователя БД.
+    /// </summary>
+    public bool AllowAllSchemas { get; init; } = true;
     public int ConnectTimeoutSeconds { get; init; } = 15;
     public int CommandTimeoutSeconds { get; init; } = 120;
     public int MaxPoolSizePerUser { get; init; } = 5;

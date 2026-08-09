@@ -1,0 +1,35 @@
+@model WebDbViewer.Web.Pages.Editor.EditorScopeVm
+@*
+    Область выполнения запроса: база данных (если СУБД их различает и подключению разрешены все базы)
+    и схема. Перерисовывается целиком при смене датасорса или базы.
+*@
+@if (Model.Databases.Count > 0)
+{
+    <label for="editor-database" style="margin:0">База</label>
+    <select id="editor-database" name="db" data-role="database-select"
+            hx-get="/editor?handler=Scope"
+            hx-trigger="change"
+            hx-include="#editor-ds, #editor-database"
+            hx-target="#editor-scope"
+            hx-swap="innerHTML">
+        @foreach (var db in Model.Databases)
+        {
+            @* data-primary — база из настроек подключения: только для неё есть кэш метаданных (автодополнение) *@
+            <option value="@db" selected="@(db == Model.SelectedDatabase)"
+                    data-primary="@(db == Model.ConnectionDatabase ? "true" : null)">@db</option>
+        }
+    </select>
+}
+
+<label for="editor-schema" style="margin:0">Схема</label>
+<select id="editor-schema" name="schema" data-role="schema-select">
+    <option value="">— по умолчанию —</option>
+    @foreach (var schema in Model.Schemas)
+    {
+        <option value="@schema">@schema</option>
+    }
+</select>
+@if (Model.ErrorMessage is not null)
+{
+    <span class="cell-muted" title="@Model.ErrorMessage">— список недоступен —</span>
+}

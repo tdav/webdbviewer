@@ -14,16 +14,20 @@ public sealed class DbSession : IDbSession
     private DbCommand? _currentCommand;
     private int _disposed;
 
-    public DbSession(Guid dataSourceId, string userName, DbConnection connection)
+    public DbSession(Guid dataSourceId, string userName, DbConnection connection, string database, bool isPrimary)
     {
         DataSourceId = dataSourceId;
         UserName = userName;
         Connection = connection;
+        Database = database;
+        IsPrimary = isPrimary;
     }
 
     public Guid SessionId { get; } = Guid.NewGuid();
     public Guid DataSourceId { get; }
     public string UserName { get; }
+    public string Database { get; }
+    public bool IsPrimary { get; }
     public DbConnection Connection { get; }
     public bool AutoCommit { get; set; } = true;
     public bool InTransaction => _transaction is not null;

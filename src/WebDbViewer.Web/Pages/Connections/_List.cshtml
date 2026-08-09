@@ -1,7 +1,19 @@
 @model IReadOnlyList<WebDbViewer.Core.DataSourceConfig>
 @if (Model.Count == 0)
 {
-    <div class="alert alert-info">Подключений пока нет. Создайте первое подключение.</div>
+    <div class="empty-state">
+        <div class="empty-state-title">Подключений пока нет</div>
+        <p class="empty-state-hint">
+            Подключение хранит адрес сервера, базу и учётные данные. Пароль шифруется
+            и в списке не показывается. Боевые базы помечайте флагом PROD.
+        </p>
+        <button type="button" class="btn btn-primary btn-icon"
+                aria-label="Создать первое подключение"
+                data-tip="Создать первое подключение"
+                hx-get="/connections?handler=Form"
+                hx-target="#connection-form-area"
+                hx-swap="innerHTML">@UiIcons.Plus</button>
+    </div>
 }
 else
 {
@@ -14,7 +26,7 @@ else
                 <th>База данных</th>
                 <th>Пользователь</th>
                 <th>Пометки</th>
-                <th></th>
+                <th class="col-actions"><span class="visually-hidden">Действия</span></th>
             </tr>
         </thead>
         <tbody>
@@ -22,38 +34,56 @@ else
             {
                 <tr>
                     <td><strong>@ds.Name</strong></td>
-                    <td><span class="badge badge-kind">@(ds.Kind == DbKind.Postgres ? "PostgreSQL" : "Oracle")</span></td>
-                    <td>@ds.Host:@ds.Port</td>
-                    <td>@ds.Database</td>
-                    <td>@ds.Username</td>
+                    @* Тип СУБД — обычный текст: бейджи оставлены за предупреждениями (PROD, RO), иначе они перестают выделяться *@
+                    <td>@(ds.Kind == DbKind.Postgres ? "PostgreSQL" : "Oracle")</td>
+                    <td class="cell-mono">@ds.Host:@ds.Port</td>
+                    <td class="cell-mono">@ds.Database</td>
+                    <td class="cell-mono">@ds.Username</td>
                     <td>
-                        @if (ds.IsProduction)
+                        @if (ds.IsProduction || ds.ReadOnly || ds.UseSsl || !ds.AllowAllSchemas)
                         {
-                            <span class="badge badge-prod" title="Производственная база — будьте осторожны!">PROD</span>
+                            <span class="badge-row">
+                                @if (ds.IsProduction)
+                                {
+                                    <span class="badge badge-prod" title="Боевая база — изменения затрагивают реальные данные">PROD</span>
+                                }
+                                @if (ds.ReadOnly)
+                                {
+                                    <span class="badge badge-ro" title="Только чтение: запись запрещена">RO</span>
+                                }
+                                @if (ds.UseSsl)
+                                {
+                                    <span class="badge badge-ssl" title="Соединение шифруется">SSL</span>
+                                }
+                                @if (!ds.AllowAllSchemas)
+                                {
+                                    <span class="badge badge-scope" title="Видна только схема подключения: просмотр всех схем/баз запрещён">1 СХЕМА</span>
+                                }
+                            </span>
                         }
-                        @if (ds.ReadOnly)
+                        else
                         {
-                            <span class="badge badge-ro" title="Только чтение">RO</span>
-                        }
-                        @if (ds.UseSsl)
-                        {
-                            <span class="badge badge-ssl" title="Шифрование соединения">SSL</span>
+                            <span class="cell-muted" title="Обычная база, запись разрешена, шифрование выключено">—</span>
                         }
                     </td>
-                    <td style="white-space:nowrap">
-                        <button type="button" class="btn btn-sm"
-                                hx-get="/connections?handler=Form&id=@ds.Id"
-                                hx-target="#connection-form-area"
-                                hx-swap="innerHTML">
-                            Изменить
-                        </button>
-                        <button type="button" class="btn btn-sm btn-danger"
-                                hx-post="/connections?handler=Delete&id=@ds.Id"
-                                hx-target="#connections-list"
-                                hx-swap="innerHTML"
-                                hx-confirm="Удалить подключение «@ds.Name»? Это действие необратимо.">
-                            Удалить
-                        </button>
+                    <td class="col-actions">
+                        <span class="table-actions">
+                            @* Имя подключения в aria-label: в таблице из десятка строк
+                               «Изменить» без уточнения одинаково для всех кнопок. *@
+                            <button type="button" class="btn btn-sm btn-icon"
+                                    aria-label="Изменить подключение @ds.Name"
+                                    data-tip="Изменить подключение «@ds.Name»"
+                                    hx-get="/connections?handler=Form&id=@ds.Id"
+                                    hx-target="#connection-form-area"
+                                    hx-swap="innerHTML">@UiIcons.Pencil</button>
+                            <button type="button" class="btn btn-sm btn-icon btn-danger"
+                                    aria-label="Удалить подключение @ds.Name"
+                                    data-tip="Удалить подключение «@ds.Name» без возможности восстановить"
+                                    hx-post="/connections?handler=Delete&id=@ds.Id"
+                                    hx-target="#connections-list"
+                                    hx-swap="innerHTML"
+                                    hx-confirm="Удалить подключение «@ds.Name»? Сохранённые учётные данные будут стёрты, действие необратимо.">@UiIcons.Trash</button>
+                        </span>
                     </td>
                 </tr>
             }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using WebDbViewer.Core;
+using WebDbViewer.Web.Services;
 
 namespace WebDbViewer.Web.Pages.Editor;
 
@@ -37,40 +38,77 @@ public sealed class EditorIndexModel : PageModel
         DataSources = await _store.GetAllAsync(ct);
         if (index < 1)
             index = 1;
+        var defaultDs = DataSources.FirstOrDefault();
         return Partial("_EditorTab", new EditorTabVm
         {
             Index = index,
-            DefaultDsId = DataSources.FirstOrDefault()?.Id
+            DefaultDsId = defaultDs?.Id,
+            DefaultDialect = defaultDs?.Kind.ToString().ToLowerInvariant()
         });
     }
 
-    /// <summary>Список схем датасорса для выпадающего списка (hx-get="/editor?handler=Schemas&amp;ds=...").</summary>
-    public async Task<IActionResult> OnGetSchemasAsync(Guid ds, CancellationToken ct)
+    /// <summary>
+    /// Область выполнения: список баз (если доступны) и схем выбранной базы
+    /// (hx-get="/editor?handler=Scope&amp;ds=...&amp;db=...").
+    /// </summary>
+    public async Task<IActionResult> OnGetScopeAsync(Guid ds, string? db, CancellationToken ct)
     {
+        var config = await _store.GetAsync(ds, ct);
+        if (config is null)
+            return Partial("_EditorScope", new EditorScopeVm { ErrorMessage = "Датасорс не найден." });
+
         try
         {
-            var config = await _store.GetAsync(ds, ct);
-            if (config is null)
-                return Content("<option value=\"\">— датасорс не найден —</option>", "text/html");
-
-            var session = await _sessions.GetOrCreateAsync(User.Identity?.Name ?? "anonymous", ds, ct);
+            var userName = User.Identity?.Name ?? "anonymous";
             var provider = _providers.Get(config.Kind);
+            var withDatabaseLevel = config.AllowAllSchemas && provider.SupportsDatabaseLevel;
+
+            IReadOnlyList<string> databases = [];
+            if (withDatabaseLevel)
+            {
+                var primary = await _sessions.GetOrCreateAsync(userName, ds, null, ct);
+                databases = (await provider.GetDatabasesAsync(primary.Connection, includeSystem: false, ct))
+                    .Select(n => n.Name)
+                    .ToList();
+            }
+
+            // База по умолчанию — из настроек подключения; чужую базу принимаем только из её списка.
+            var selectedDatabase = databases.Contains(db, StringComparer.Ordinal) ? db : config.Database;
+            var session = await _sessions.GetOrCreateAsync(userName, ds, selectedDatabase, ct);
+
             var schemas = await provider.GetSchemasAsync(session.Connection, includeSystem: false, ct);
 
-            var html = new System.Text.StringBuilder("<option value=\"\">— по умолчанию —</option>");
-            foreach (var schema in schemas)
+            // Датасорс без права на все схемы: показываем только собственную схему подключения.
+            var allowedSchemas = await SchemaScope.ResolveAsync(config, session.Connection, ct);
+            if (allowedSchemas is not null)
+                schemas = schemas.Where(allowedSchemas.Contains).ToList();
+
+            return Partial("_EditorScope", new EditorScopeVm
             {
-                var encoded = System.Net.WebUtility.HtmlEncode(schema);
-                html.Append($"<option value=\"{encoded}\">{encoded}</option>");
-            }
-            return Content(html.ToString(), "text/html");
+                Databases = databases,
+                SelectedDatabase = selectedDatabase,
+                ConnectionDatabase = config.Database,
+                Schemas = schemas
+            });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Ошибка загрузки списка схем: ds={Ds}", ds);
-            return Content("<option value=\"\">— ошибка загрузки схем —</option>", "text/html");
+            _logger.LogError(ex, "Ошибка загрузки списка баз/схем: ds={Ds}, db={Db}", ds, db);
+            return Partial("_EditorScope", new EditorScopeVm { ErrorMessage = ex.Message });
         }
     }
+}
+
+/// <summary>Модель тулбара «база + схема» для partial _EditorScope.</summary>
+public sealed record EditorScopeVm
+{
+    /// <summary>Базы сервера; пустой список — уровень баз недоступен (Oracle либо подключение без права на все базы).</summary>
+    public IReadOnlyList<string> Databases { get; init; } = [];
+    public string? SelectedDatabase { get; init; }
+    /// <summary>База из настроек подключения — единственная, для которой строится кэш метаданных.</summary>
+    public string? ConnectionDatabase { get; init; }
+    public IReadOnlyList<string> Schemas { get; init; } = [];
+    public string? ErrorMessage { get; init; }
 }
 
 /// <summary>Модель новой вкладки редактора для partial _EditorTab.</summary>
@@ -78,5 +116,9 @@ public sealed record EditorTabVm
 {
     public required int Index { get; init; }
     public Guid? DefaultDsId { get; init; }
+
+    /// <summary>Диалект для CodeMirror: "postgres" | "oracle".</summary>
+    public string? DefaultDialect { get; init; }
+
     public string TabId => $"tab-{Index}";
 }

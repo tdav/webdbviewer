@@ -92,6 +92,10 @@ public sealed class PostgresMetaStore : IAsyncDisposable
             updated_at                timestamptz NOT NULL DEFAULT now()
         );
 
+        -- Добавлено позже: у существующих датасорсов сохраняем прежнее поведение (все схемы видимы).
+        ALTER TABLE {schema}.datasources
+            ADD COLUMN IF NOT EXISTS allow_all_schemas boolean NOT NULL DEFAULT true;
+
         -- username хранится нормализованным (нижний регистр): вход нечувствителен к регистру.
         CREATE TABLE IF NOT EXISTS {schema}.users (
             username             text        PRIMARY KEY,

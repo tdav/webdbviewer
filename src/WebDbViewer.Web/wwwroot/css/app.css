@@ -1,49 +1,159 @@
 /* ============================================================
-   WebDbViewer — базовые стили. Тёмная/светлая тема через CSS-переменные.
+   WebDbViewer — дизайн-система Ember/Slate.
+
+   Принципы (см. DESIGN.md):
+   1. Плоская elevation. Глубина — тональными уровнями фона (base → panel → well)
+      и hairline-границей 1px. box-shadow только у настоящих overlay.
+   2. Один акцент. Ember Orange помечает «здесь можно действовать» и больше ничего.
+      Статус запроса, транзакции и подключения говорят семантическими цветами.
+   3. Обе темы равноправны. Ни один компонент не хардкодит цвет — только var().
+
+   Контраст: значения muted/семантики подобраны так, чтобы держать 4.5:1 на всех
+   трёх уровнях поверхности, включая hover-подложку строки (самый узкий случай).
+   Канонические значения из DESIGN.md здесь сознательно сдвинуты по тональной шкале —
+   исходные #8A8A9A/#7D7D8A дают 3.5–4.0:1 и не проходят AA, которого требует
+   тот же документ.
    ============================================================ */
 
+/* ---------- Тёмная тема (по умолчанию) ---------- */
 :root,
-html[data-theme="light"] {
-    --bg: #f5f6f8;
-    --bg-panel: #ffffff;
-    --bg-panel-alt: #eef0f3;
-    --bg-hover: #e3e7ec;
-    --bg-active: #d6e4f5;
-    --border: #d0d4da;
-    --text: #1e2328;
-    --text-muted: #6a7280;
-    --accent: #2563eb;
-    --accent-contrast: #ffffff;
-    --danger: #c62828;
-    --danger-bg: #fdecea;
-    --success: #1b7f3b;
-    --success-bg: #e8f5ec;
-    --warning: #9a6b00;
-    --warning-bg: #fff6de;
-    --prod-badge: #c62828;
-    --shadow: 0 2px 8px rgba(0, 0, 0, .12);
-    --mono: "Cascadia Mono", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+html[data-theme="dark"] {
+    /* Поверхности: три тональных уровня */
+    --bg: #2d2d35;              /* Deep Slate — фон приложения */
+    --bg-panel: #363640;        /* Elevated Slate — панели, сайдбар, карточки */
+    --bg-panel-alt: #3a3a45;    /* Mid Slate — заголовки таблиц, подложки */
+    --bg-hover: #43434f;        /* наведение на строку/кнопку */
+    --bg-well: #1e1e26;         /* Sunken Void — поля ввода, контейнеры данных */
+    --bg-active: rgb(255 107 44 / .14);  /* выбранная строка = слабый акцент */
+
+    --border: rgb(255 255 255 / .08);
+    --border-strong: rgb(255 255 255 / .16);
+    /* Подсветка текущей строки редактора: тоньше, чем уровень поверхности,
+       иначе через весь редактор идёт светлая полоса. */
+    --line-highlight: rgb(255 255 255 / .045);
+
+    /* Текст */
+    --text: #ffffff;
+    --text-muted: #a8a8b8;      /* 4.8:1 на bg-panel-alt, 5.8:1 на bg */
+
+    /* Акцент: заливка одинакова в обеих темах, «чернильный» текст поверх неё
+       даёт 6.1:1 — белый дал бы 2.8:1 и не прошёл бы AA. */
+    --accent: #ff6b2c;
+    --accent-hover: #ff8c42;
+    --accent-ink: #1a1a20;
+    --accent-soft: rgb(255 107 44 / .14);
+    --accent-line: #ff6b2c;
+    --accent-text: #ff8c42;     /* ссылки и акцентный текст: 5.2:1 на панели */
+
+    /* Семантика: статус запроса, транзакции, подключения */
+    --success: #4ade80;
+    --success-bg: rgb(74 222 128 / .14);
+    --warning: #ffb02e;
+    --warning-bg: rgb(255 176 46 / .14);
+    --danger: #ff8080;
+    --danger-bg: rgb(255 77 77 / .15);
+    --danger-solid: #ff4d4d;
+    --danger-solid-ink: #1a1a20;
+    --info: #6fb8ff;
+    --info-bg: rgb(111 184 255 / .14);
+    --neutral: #a8a8b8;
+    --neutral-bg: rgb(168 168 184 / .12);
+
+    /* Подсветка SQL — отдельный слой, не пересекающийся ни с акцентом,
+       ни с семантикой статусов: зелёный литерал не должен читаться как «успех»,
+       а ключевое слово — как «здесь можно нажать». Оранжевый в палитре
+       синтаксиса не используется намеренно. */
+    --syntax-keyword: #c8a0ff;
+    --syntax-string: #7ddfa0;
+    --syntax-number: #6fd9d2;
+    --syntax-comment: #a8a8b8;
+
+    /* Тени — только у overlay */
+    --shadow-overlay: 0 8px 24px rgb(0 0 0 / .45);
+    --shadow-overlay-sm: 0 4px 12px rgb(0 0 0 / .35);
+
+    color-scheme: dark;
 }
 
-html[data-theme="dark"] {
-    --bg: #14171c;
-    --bg-panel: #1c2128;
-    --bg-panel-alt: #22272f;
-    --bg-hover: #2b323c;
-    --bg-active: #28405e;
-    --border: #343b46;
-    --text: #d7dde4;
-    --text-muted: #8b95a3;
-    --accent: #4f8ff7;
-    --accent-contrast: #0d1117;
-    --danger: #ef5350;
-    --danger-bg: #3a2224;
-    --success: #4caf6e;
-    --success-bg: #1e3226;
-    --warning: #e0b23f;
-    --warning-bg: #3a3220;
-    --prod-badge: #ef5350;
-    --shadow: 0 2px 10px rgba(0, 0, 0, .45);
+/* ---------- Светлая тема ---------- */
+html[data-theme="light"] {
+    --bg: #f0f0f5;              /* Cool Mist */
+    --bg-panel: #ffffff;        /* Pure Panel */
+    --bg-panel-alt: #e9e9f1;
+    --bg-hover: #e4e4ec;        /* Recessed */
+    --bg-well: #e9e9f1;
+    --bg-active: rgb(255 107 44 / .13);
+
+    --border: rgb(26 26 46 / .12);
+    --border-strong: rgb(26 26 46 / .22);
+    --line-highlight: rgb(26 26 46 / .05);
+
+    --text: #1a1a2e;            /* Deep Navy — 17:1 на белом */
+    --text-muted: #606070;      /* 6.2:1 на белом, 4.9:1 на well */
+
+    --accent: #ff6b2c;
+    --accent-hover: #ff8043;
+    --accent-ink: #1a1a20;
+    --accent-soft: rgb(255 107 44 / .13);
+    --accent-line: #c25100;     /* кольцо фокуса: чистый ember даёт 2.8:1 на белом */
+    --accent-text: #994400;     /* 6.6:1 на белом */
+
+    --success: #15803d;
+    --success-bg: rgb(21 128 61 / .11);
+    --warning: #b45309;
+    --warning-bg: rgb(180 83 9 / .11);
+    --danger: #dc2626;
+    --danger-bg: rgb(220 38 38 / .10);
+    --danger-solid: #dc2626;
+    --danger-solid-ink: #ffffff;
+    --info: #2563eb;
+    --info-bg: rgb(37 99 235 / .10);
+    --neutral: #6b7280;
+    --neutral-bg: rgb(107 114 128 / .12);
+
+    --syntax-keyword: #6b21a8;
+    --syntax-string: #166534;
+    --syntax-number: #0f5f66;
+    --syntax-comment: #606070;
+
+    --shadow-overlay: 0 8px 24px rgb(26 26 46 / .14);
+    --shadow-overlay-sm: 0 4px 12px rgb(26 26 46 / .10);
+
+    color-scheme: light;
+}
+
+/* Внетематические токены: шкала отступов (шаг 4px), радиусы, уровни наложения.
+   Значения берутся только отсюда — произвольные числа в разметке не допускаются. */
+:root {
+    --space-3xs: 2px;
+    --space-2xs: 4px;
+    --space-xs: 6px;
+    --space-sm: 8px;
+    --space-md: 12px;
+    --space-lg: 16px;
+    --space-xl: 24px;
+    --space-2xl: 32px;
+
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+    --radius-pill: 9999px;
+
+    /* Семантическая шкала наложения. Произвольные 999/9999 запрещены. */
+    --z-dropdown: 10;
+    --z-sticky: 20;
+    --z-modal: 50;
+    --z-toast: 60;
+    --z-tooltip: 70;
+
+    /* Инструмент, а не витрина: переходы короткие, состояние важнее хореографии. */
+    --motion-fast: 120ms;
+    --motion-normal: 200ms;
+    --ease-out: cubic-bezier(.22, 1, .36, 1);
+
+    --font-ui: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", "Cascadia Mono", "Fira Code", Consolas, "Liberation Mono", monospace;
 }
 
 * { box-sizing: border-box; }
@@ -53,114 +163,314 @@ html, body {
     height: 100%;
     background: var(--bg);
     color: var(--text);
-    font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+    font: 14px/1.45 var(--font-ui);
+    -webkit-font-smoothing: antialiased;
 }
 
 body { display: flex; flex-direction: column; }
 
-a { color: var(--accent); text-decoration: none; }
+a { color: var(--accent-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
+
+/* Все технические значения — моноширинным: путь, размер, длительность, IP, SQL.
+   Читается посимвольно, значит не должно «плыть» по ширине между строками. */
+.mono, code, kbd, samp { font-family: var(--mono); }
 
 /* ---------- Верхняя панель ---------- */
 .topbar {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 0 14px;
+    gap: var(--space-lg);
+    padding: 0 var(--space-md);
     height: 44px;
     flex: 0 0 auto;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
 }
 
-.topbar-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.topbar-nav { display: flex; gap: 4px; }
+.topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+/* Знак приложения — единственное место, где акцент работает как идентичность. */
+.brand-icon { display: flex; color: var(--accent); }
+.brand-icon svg { display: block; }
+
+.topbar-nav { display: flex; gap: var(--space-3xs); }
 
 .nav-link {
-    padding: 5px 10px;
-    border-radius: 6px;
-    color: var(--text);
+    padding: var(--space-xs) var(--space-md);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    transition: color var(--motion-fast) ease, background-color var(--motion-fast) ease;
 }
-.nav-link:hover { background: var(--bg-hover); text-decoration: none; }
+.nav-link:hover { background: var(--bg-hover); color: var(--text); text-decoration: none; }
+/* Активный раздел различается насыщенностью текста и нейтральной подложкой,
+   а не цветом: акцент помечает действия, а не местоположение. Оранжевый чип
+   здесь спорил бы с главной кнопкой экрана. */
+.nav-link[aria-current="page"] {
+    background: var(--bg-hover);
+    color: var(--text);
+    font-weight: 500;
+}
 
-.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.user-name { color: var(--text-muted); }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: var(--space-sm); }
+.user-name { display: inline-flex; align-items: center; gap: var(--space-xs); color: var(--text-muted); }
+.user-name svg { color: var(--text-muted); }
 .inline-form { display: inline; }
 
 .main-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.page { padding: 18px; overflow: auto; }
-.page h1 { margin-top: 0; font-size: 20px; }
+.page { padding: var(--space-xl) var(--space-lg); overflow: auto; }
+.page h1 { margin-top: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
 
-/* ---------- Кнопки и формы ---------- */
+/* ---------- Кнопки ---------- */
 .btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 12px;
+    justify-content: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-md);
+    min-height: 30px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--bg-panel-alt);
     color: var(--text);
     cursor: pointer;
     font: inherit;
+    white-space: nowrap;
+    transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease;
 }
-.btn:hover { background: var(--bg-hover); }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+.btn:active { background: var(--bg); }
+/* Отключённое состояние гасится цветом, а не прозрачностью. Полупрозрачный
+   danger-текст давал 2.3:1, а кнопка остановки отключена при каждой загрузке
+   редактора — это самый заметный неактивный контрол в приложении. Кнопка теряет
+   свою семантическую окраску и становится нейтральной, оставаясь читаемой.
 
-.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); font-weight: 600; }
-.btn-primary:hover { filter: brightness(1.1); background: var(--accent); }
-.btn-danger { color: var(--danger); border-color: var(--danger); background: transparent; }
-.btn-danger:hover { background: var(--danger-bg); }
-.btn-ghost { background: transparent; border-color: transparent; }
-.btn-ghost:hover { background: var(--bg-hover); }
-.btn-sm { padding: 2px 8px; font-size: 12px; }
+   Кнопки-действия помечаются aria-disabled, а не атрибутом disabled: иконочная
+   кнопка обязана оставаться наводимой и фокусируемой, иначе узнать её назначение
+   негде — браузер не шлёт mouse-события отключённым контролам и не даёт им фокус. */
+.btn:disabled,
+.btn[aria-disabled="true"] {
+    background: var(--bg-panel-alt);
+    border-color: var(--border);
+    color: var(--text-muted);
+    font-weight: 400;
+    cursor: not-allowed;
+}
+.btn:disabled:hover,
+.btn[aria-disabled="true"]:hover,
+.btn[aria-disabled="true"]:active {
+    background: var(--bg-panel-alt);
+    border-color: var(--border);
+}
+.btn:disabled svg,
+.btn[aria-disabled="true"] svg { opacity: .7; }
 
-input[type="text"], input[type="password"], input[type="number"], select, textarea {
+/* Главное действие экрана. По правилу одного голоса — не больше одной такой
+   кнопки в поле зрения; всё остальное .btn или .btn-ghost. */
+.btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+}
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-primary:active { background: var(--accent); filter: brightness(.95); }
+
+.btn-danger { color: var(--danger); border-color: var(--border); background: transparent; }
+.btn-danger:hover { background: var(--danger-bg); border-color: var(--danger); }
+
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
+.btn-ghost:hover { background: var(--accent-soft); border-color: transparent; color: var(--text); }
+.btn-ghost:active { background: var(--accent-soft); }
+
+.btn-sm { padding: var(--space-3xs) var(--space-sm); min-height: 24px; font-size: 12px; }
+.btn svg { flex: 0 0 auto; }
+
+/* ---------- Иконочные кнопки ---------- */
+/* Кнопки в системе несут иконку вместо подписи. Квадратная посадка: ширина
+   равна высоте, чтобы ряд кнопок читался как ровная сетка, а не как забор из
+   прямоугольников разной длины. Подпись переезжает в aria-label (доступное имя)
+   и data-tip (видимая подсказка) — иконка без обоих в системе не допускается. */
+.btn-icon {
+    padding: 0;
+    width: 30px;
+    min-width: 30px;
+    gap: 0;
+}
+.btn-icon.btn-sm { width: 24px; min-width: 24px; }
+.ui-icon { width: 15px; height: 15px; display: block; }
+.btn-sm .ui-icon { width: 13px; height: 13px; }
+
+/* Счётчик на кнопке «сохранить изменения»: это данные, а не подпись,
+   поэтому он остаётся видимым рядом с иконкой. */
+.btn-icon-count {
+    padding: 0 var(--space-sm) 0 var(--space-xs);
+    width: auto;
+    min-width: 30px;
+    gap: var(--space-2xs);
+}
+.btn-count {
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Подсказка ---------- */
+/* Нативный title не годится: задержка около секунды, не появляется при фокусе
+   с клавиатуры и не поддаётся стилизации. Позиционирование fixed обязательно —
+   тулбар вкладок имеет overflow-x: auto и обрезал бы absolute-подсказку. */
+#wdv-tooltip {
+    position: fixed;
+    z-index: var(--z-tooltip);
+    /* Сброс браузерных стилей popover: по умолчанию он центрируется через
+       inset: 0 + margin: auto, что перебило бы вычисленные top/left. */
+    inset: auto;
+    margin: 0;
+    overflow: visible;
+    max-width: 34ch;
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
     background: var(--bg-panel);
+    color: var(--text);
+    box-shadow: var(--shadow-overlay-sm);
+    font-size: 12px;
+    line-height: 1.4;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+#wdv-tooltip[data-visible] { opacity: 1; transform: none; }
+/* Горячая клавиша — отдельной плашкой: в общем потоке текста «подряд Alt+X»
+   склеивается в одну фразу и сочетание перестаёт читаться как клавиши. */
+#wdv-tooltip kbd {
+    display: inline-block;
+    margin-left: var(--space-2xs);
+    padding: 0 var(--space-2xs);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-well);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* ---------- Поля ввода ---------- */
+input[type="text"], input[type="password"], input[type="number"],
+input[type="date"], input[type="search"], select, textarea {
+    background: var(--bg-well);
     border: 1px solid var(--border);
     color: var(--text);
-    border-radius: 6px;
-    padding: 5px 8px;
+    border-radius: var(--radius-md);
+    padding: var(--space-xs) var(--space-sm);
+    min-height: 30px;
     font: inherit;
+    transition: border-color var(--motion-fast) ease;
 }
-input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:hover:not(:disabled), select:hover:not(:disabled), textarea:hover:not(:disabled) {
+    border-color: var(--border-strong);
+}
+/* Фокус — граница акцента плюс кольцо: одна только граница теряется на плотной
+   панели инструментов, где полей десяток подряд. */
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: none;
+    border-color: var(--accent-line);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+}
+input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1; }
+/* По той же причине, что и у кнопок: цвет вместо прозрачности — значение
+   в отключённом поле всё ещё нужно прочитать. */
+input:disabled, select:disabled, textarea:disabled {
+    background: var(--bg-panel-alt);
+    color: var(--text-muted);
+    cursor: not-allowed;
+}
 
-label { display: block; margin-bottom: 2px; color: var(--text-muted); font-size: 12px; }
-.field { margin-bottom: 10px; }
-.field-row { display: flex; gap: 12px; flex-wrap: wrap; }
+/* Акцент на переключателях: чекбокс «Auto-commit» — тоже действие. */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+label {
+    display: block;
+    margin-bottom: var(--space-3xs);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .02em;
+}
+.field { margin-bottom: var(--space-md); }
+.field-row { display: flex; gap: var(--space-md); flex-wrap: wrap; }
 .field-row .field { flex: 1 1 140px; }
-.checkbox-field { display: flex; align-items: center; gap: 6px; }
-.checkbox-field label { margin: 0; color: var(--text); font-size: 13px; }
+.checkbox-field { display: flex; align-items: center; gap: var(--space-xs); }
+.checkbox-field label { margin: 0; color: var(--text); font-size: 14px; font-weight: 400; letter-spacing: 0; }
 
 /* ---------- Бейджи ---------- */
+/* Статус никогда не передаётся одним цветом — у каждого бейджа есть текст. */
 .badge {
     display: inline-block;
-    padding: 1px 8px;
-    border-radius: 10px;
+    padding: 1px var(--space-sm);
+    border-radius: var(--radius-pill);
     font-size: 11px;
     font-weight: 600;
+    line-height: 1.6;
     border: 1px solid transparent;
+    white-space: nowrap;
 }
-.badge-prod { background: var(--prod-badge); color: #fff; }
+.badge-prod { background: var(--danger-solid); color: var(--danger-solid-ink); }
 .badge-ro { background: var(--warning-bg); color: var(--warning); border-color: var(--warning); }
-.badge-kind { background: var(--bg-panel-alt); color: var(--text-muted); border-color: var(--border); }
 .badge-ssl { background: var(--success-bg); color: var(--success); }
+.badge-scope { background: var(--neutral-bg); color: var(--text-muted); border-color: var(--border-strong); }
+.badge-ok { background: var(--success-bg); color: var(--success); }
+.badge-error { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
 
 /* ---------- Таблицы ---------- */
-.table { width: 100%; border-collapse: collapse; background: var(--bg-panel); border-radius: 8px; overflow: hidden; }
-.table th, .table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
-.table th { background: var(--bg-panel-alt); font-weight: 600; font-size: 12px; text-transform: none; }
-.table tr:hover td { background: var(--bg-hover); }
+.table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+.table th, .table td {
+    text-align: left;
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--border);
+}
+.table th {
+    background: var(--bg-panel-alt);
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 12px;
+    letter-spacing: .02em;
+}
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr { transition: background-color var(--motion-fast) ease; }
+.table tbody tr:hover td { background: var(--bg-hover); }
 
 /* ---------- Панели-сообщения ---------- */
-.alert { padding: 10px 14px; border-radius: 8px; margin: 8px 0; border: 1px solid transparent; }
+/* Полная граница + тонированный фон. Цветная полоса слева запрещена системой. */
+.alert {
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-md);
+    margin: var(--space-sm) 0;
+    border: 1px solid transparent;
+}
 .alert-error { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
 .alert-success { background: var(--success-bg); color: var(--success); border-color: var(--success); }
-.alert-info { background: var(--bg-panel-alt); color: var(--text-muted); border-color: var(--border); }
+.alert-info { background: var(--bg-panel); color: var(--text-muted); border-color: var(--border); }
 
 /* ============================================================
-   Трёхпанельный интерфейс (как в DBeaver):
-   слева — навигатор, центр — вкладки редактора, низ — результаты.
+   Трёхпанельный интерфейс: слева навигатор, центр — вкладки
+   редактора, низ — результаты.
    ============================================================ */
 .workbench {
     display: grid;
@@ -179,15 +489,15 @@ label { display: block; margin-bottom: 2px; color: var(--text-muted); font-size:
     border-right: 1px solid var(--border);
 }
 
-/* Разделители: перетаскивание реализовано в wwwroot/js/splitter.js.
+/* Разделители: перетаскивание реализовано в frontend/src/splitter.js.
    touch-action: none обязателен — иначе браузер перехватывает жест как прокрутку. */
 .splitter-v,
 .splitter-h {
     background: transparent;
     touch-action: none;
-    transition: background-color .12s ease;
+    transition: background-color var(--motion-fast) ease;
     /* Поверх соседних панелей: иначе при минимальной высоте редактора
-       его textarea/CodeMirror перекрывает разделитель и тот перестаёт ловить мышь. */
+       его CodeMirror перекрывает разделитель и тот перестаёт ловить мышь. */
     position: relative;
     z-index: 2;
 }
@@ -217,52 +527,97 @@ body.wdv-resizing-row, body.wdv-resizing-row * { cursor: row-resize !important; 
 
 /* ---------- Навигатор ---------- */
 .navigator-toolbar {
-    padding: 8px;
+    padding: var(--space-sm);
     border-bottom: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-xs);
 }
-.navigator-toolbar input[type="text"] { width: 100%; }
-.navigator-body { flex: 1 1 auto; overflow: auto; padding: 4px 0; }
+.navigator-toolbar input[type="text"],
+.navigator-toolbar select { width: 100%; }
+.navigator-body { flex: 1 1 auto; overflow: auto; padding: var(--space-2xs) 0; }
 
 .tree, .tree ul { list-style: none; margin: 0; padding-left: 0; }
-.tree ul { padding-left: 18px; }
+/* Отступ уровня + направляющая: на глубине 4–5 уровней без неё теряется,
+   к какому родителю относится объект. */
+.tree ul {
+    padding-left: var(--space-lg);
+    margin-left: var(--space-sm);
+    border-left: 1px solid var(--border);
+}
 
 .tree-node > .tree-label {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 2px 8px;
+    gap: var(--space-xs);
+    padding: var(--space-3xs) var(--space-sm);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     white-space: nowrap;
+    transition: background-color var(--motion-fast) ease;
 }
 .tree-node > .tree-label:hover { background: var(--bg-hover); }
-.tree-node.system > .tree-label { opacity: .6; }
+.tree-node > .tree-label:focus-visible {
+    outline: 2px solid var(--accent-line);
+    outline-offset: -2px;
+}
+/* Системные объекты — роль muted: видимы, но не конкурируют с рабочими. */
+.tree-node.system > .tree-label .tree-name { color: var(--text-muted); }
 
-.tree-toggle { width: 12px; display: inline-block; color: var(--text-muted); font-size: 10px; flex: 0 0 auto; }
-.tree-icon { flex: 0 0 auto; }
-.tree-comment { color: var(--text-muted); font-size: 11px; margin-left: 6px; }
-.tree-empty { color: var(--text-muted); padding: 4px 10px; font-style: italic; }
+.tree-toggle {
+    width: 12px;
+    display: inline-flex;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 11px;
+    flex: 0 0 auto;
+    /* Раскрытие поворачивает тот же треугольник, а не подменяет глиф:
+       так стрелка не «прыгает» по базовой линии между состояниями. */
+    transition: transform var(--motion-fast) ease;
+}
+.tree-node.expanded > .tree-label .tree-toggle { transform: rotate(90deg); }
+
+/* Иконка типа объекта — нейтральная: в дереве ведёт имя, а не пиктограмма. */
+.tree-icon { flex: 0 0 auto; display: inline-flex; color: var(--text-muted); }
+.tree-icon .obj-icon { width: 14px; height: 14px; display: block; }
+.tree-open-data .ui-icon { width: 13px; height: 13px; }
+.tree-comment { color: var(--text-muted); font-size: 11px; margin-left: var(--space-xs); }
+.tree-empty { color: var(--text-muted); padding: var(--space-2xs) var(--space-md); }
+.tree-name { color: inherit; }
+a.tree-name:hover { color: var(--accent-text); }
+
+/* Ссылка «открыть данные» появляется при наведении и фокусе: в покое строка
+   дерева не должна пестрить иконками действий. */
+.tree-open-data {
+    margin-left: auto;
+    padding-left: var(--space-sm);
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+.tree-label:hover .tree-open-data,
+.tree-open-data:focus-visible { opacity: 1; }
+.tree-open-data:hover { color: var(--accent-text); text-decoration: none; }
 
 /* ---------- Вкладки редактора ---------- */
 /* overflow: hidden — содержимое не вылезает за границы панели, когда разделитель
-   сжимает редактор до минимума (иначе textarea накрывает разделитель). */
+   сжимает редактор до минимума. */
 .editor-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--bg); }
 
 .editor-tabs-bar {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-3xs);
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
-    padding: 0 6px;
+    padding: 0 var(--space-xs);
     flex: 0 0 auto;
     overflow-x: auto;
 }
 .editor-tab-btn {
-    padding: 7px 14px;
+    padding: var(--space-sm) var(--space-md);
     border: none;
     border-bottom: 2px solid transparent;
     background: transparent;
@@ -270,26 +625,37 @@ body.wdv-resizing-row, body.wdv-resizing-row * { cursor: row-resize !important; 
     cursor: pointer;
     font: inherit;
     white-space: nowrap;
+    transition: color var(--motion-fast) ease;
 }
-.editor-tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+.editor-tab-btn.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
 .editor-tab-btn:hover { color: var(--text); }
-.editor-tab-close { margin-left: 6px; opacity: .6; }
+.editor-tab-close { margin-left: var(--space-xs); opacity: .6; }
 .editor-tab-close:hover { opacity: 1; color: var(--danger); }
 
 .editor-toolbar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-sm);
     flex-wrap: wrap;
-    padding: 6px 10px;
+    padding: var(--space-xs) var(--space-md);
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
     flex: 0 0 auto;
 }
-.editor-toolbar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 2px; }
+/* Подписи внутри тулбара стоят в строку со своим контролом, а не над ним. */
+.editor-toolbar label { margin: 0; }
+.editor-toolbar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 var(--space-2xs); }
 
-.tx-indicator { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
-.tx-indicator .tx-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); }
+/* Индикатор транзакции. Открытая транзакция — состояние, которое оператор
+   обязан заметить: роль warning, не акцент. */
+.tx-indicator { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: 12px; color: var(--text-muted); }
+.tx-indicator .tx-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-pill);
+    background: var(--text-muted);
+    flex: 0 0 auto;
+}
 .tx-indicator.active { color: var(--warning); }
 .tx-indicator.active .tx-dot { background: var(--warning); }
 
@@ -306,7 +672,7 @@ body.wdv-resizing-row, body.wdv-resizing-row * { cursor: row-resize !important; 
     border-radius: 0;
     background: var(--bg);
     font-family: var(--mono);
-    padding: 10px;
+    padding: var(--space-sm);
 }
 .editor-pane .cm-editor { height: 100%; }
 
@@ -318,26 +684,59 @@ body.wdv-resizing-row, body.wdv-resizing-row * { cursor: row-resize !important; 
     background: var(--bg-panel);
     border-top: 1px solid var(--border);
 }
-.results-tabs { display: flex; gap: 2px; padding: 0 6px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
-.results-body { flex: 1 1 auto; overflow: auto; font-family: var(--mono); font-size: 13px; }
-.results-placeholder { color: var(--text-muted); padding: 14px; font-family: inherit; }
-.results-status { flex: 0 0 auto; padding: 3px 10px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 12px; }
+.results-tabs {
+    display: flex;
+    gap: var(--space-3xs);
+    padding: 0 var(--space-xs);
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+}
+.results-body { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+/* Грид результатов сам виртуализует прокрутку — внешний скролл ему только мешает. */
+.results-body > [data-result-grid] { height: 100%; }
+.results-placeholder { color: var(--text-muted); padding: var(--space-lg); }
+.results-status {
+    flex: 0 0 auto;
+    padding: var(--space-2xs) var(--space-md);
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: var(--mono);
+}
 
 /* ---------- Грид данных ---------- */
 .data-toolbar {
     display: flex;
-    gap: 8px;
+    gap: var(--space-sm);
     align-items: flex-end;
     flex-wrap: wrap;
-    padding: 10px;
+    padding: var(--space-md);
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
 }
 .data-toolbar .field { margin-bottom: 0; }
+
+/* Панель накопленных правок грида. Появляется только при наличии изменений,
+   поэтому отделяется от тулбара границей, а не отступом. */
+.data-edit-panel {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-md);
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+}
+.data-edit-panel[hidden] { display: none; }
+/* Панель фильтров как отдельная поверхность на странице (аудит): рамка + радиус. */
+.data-toolbar--card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--space-lg);
+}
 .grid-container { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
 /* ---------- Индикатор загрузки HTMX ---------- */
-.htmx-indicator { display: none; color: var(--text-muted); }
+.htmx-indicator { display: none; color: var(--text-muted); font-size: 12px; }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }
 
 /* ---------- Форма логина ---------- */
@@ -347,17 +746,260 @@ body.wdv-resizing-row, body.wdv-resizing-row * { cursor: row-resize !important; 
     align-items: center;
     justify-content: center;
     background: var(--bg);
+    padding: var(--space-lg);
 }
 .login-card {
     width: 340px;
+    max-width: 100%;
     background: var(--bg-panel);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow);
-    padding: 28px;
+    border-radius: var(--radius-xl);
+    padding: var(--space-2xl);
 }
-.login-card h1 { margin: 0 0 18px; font-size: 20px; text-align: center; }
+.login-card h1 {
+    margin: 0 0 var(--space-xl);
+    font-size: 20px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+}
+.login-card h1 .brand-icon { color: var(--accent); }
 .login-card input { width: 100%; }
-.login-card .btn { width: 100%; justify-content: center; margin-top: 8px; }
+/* Кнопка входа иконочная, поэтому не растягивается на всю карточку:
+   пиктограмма 15px посреди 284px полосы читалась бы как промах вёрстки. */
+.login-card .btn { margin: var(--space-lg) auto 0; }
+.login-card .btn-icon { width: 44px; min-width: 44px; min-height: 36px; }
 
-#toast-area { position: fixed; bottom: 16px; right: 16px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+#toast-area {
+    position: fixed;
+    bottom: var(--space-lg);
+    right: var(--space-lg);
+    z-index: var(--z-toast);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+/* ============================================================
+   Страницы-настройки: заголовок, ограничение ширины, пустое состояние
+   ============================================================ */
+
+/* Формы и списки не растягиваются на всю ширину ultrawide-монитора:
+   иначе подпись поля и его значение оказываются в 900 px друг от друга. */
+.page--constrained { width: 100%; max-width: 1180px; margin-inline: auto; }
+
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-lg);
+}
+.page-header h1 {
+    margin: 0;
+    font-size: 20px;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+}
+.page-count { font-size: 12px; font-weight: 400; color: var(--text-muted); font-family: var(--mono); }
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-2xl) var(--space-xl);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--bg-panel);
+    text-align: center;
+}
+.empty-state-title { font-weight: 600; }
+.empty-state-hint { color: var(--text-muted); max-width: 52ch; }
+
+/* ============================================================
+   Модальный диалог (нативный <dialog>: фокус-ловушка и Esc — из коробки)
+   ============================================================ */
+.modal {
+    padding: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-xl);
+    background: var(--bg-panel);
+    color: var(--text);
+    box-shadow: var(--shadow-overlay);
+    width: min(680px, calc(100vw - var(--space-xl)));
+}
+.modal::backdrop { background: rgb(10 10 14 / .58); }
+.modal[open] { animation: modal-in 160ms var(--ease-out); }
+
+@keyframes modal-in {
+    from { opacity: 0; transform: translateY(-6px) scale(.985); }
+    to { opacity: 1; transform: none; }
+}
+
+.modal-form { display: flex; flex-direction: column; max-height: calc(100vh - var(--space-2xl)); }
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-md) var(--space-lg);
+    border-bottom: 1px solid var(--border);
+}
+.modal-title { margin: 0; font-size: 16px; font-weight: 600; }
+
+.modal-body { padding: var(--space-lg); overflow: auto; }
+
+.modal-footer {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-md) var(--space-lg);
+    border-top: 1px solid var(--border);
+    background: var(--bg-panel-alt);
+    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+}
+/* Диагностика («Проверить подключение») слева, решения — справа. */
+.modal-footer .footer-spacer { margin-left: auto; }
+
+/* ============================================================
+   Сетка формы: 12 колонок, поля занимают ширину своей ячейки
+   ============================================================ */
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: var(--space-md);
+    align-items: start;
+}
+.form-grid .field { margin: 0; min-width: 0; }
+.form-grid .field > input,
+.form-grid .field > select { width: 100%; }
+
+.span-2 { grid-column: span 2; }
+.span-3 { grid-column: span 3; }
+.span-4 { grid-column: span 4; }
+.span-5 { grid-column: span 5; }
+.span-6 { grid-column: span 6; }
+.span-7 { grid-column: span 7; }
+.span-12 { grid-column: 1 / -1; }
+
+.field-required { color: var(--text-muted); font-weight: 400; }
+
+.field-group {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm) var(--space-xl);
+    margin: 0;
+    padding: var(--space-md) 0 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+}
+/* float + width:100% — легенда встаёт отдельной строкой под разделителем,
+   а не в вырезе рамки: иначе линия проходит по её середине. */
+.field-group legend {
+    float: left;
+    width: 100%;
+    padding: 0;
+    margin-bottom: var(--space-sm);
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.field-hint { color: var(--text-muted); font-size: 11px; margin-top: var(--space-3xs); }
+
+/* Узкие экраны: колонок нет, поля идут в одну колонку. */
+@media (max-width: 620px) {
+    .form-grid > * { grid-column: 1 / -1; }
+}
+
+/* ============================================================
+   Таблица подключений
+   ============================================================ */
+.table thead th {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+}
+.table .col-actions { text-align: right; white-space: nowrap; width: 1%; }
+.table .cell-mono { font-family: var(--mono); font-size: 12px; }
+.table .cell-muted { color: var(--text-muted); }
+.table .col-nowrap { white-space: nowrap; width: 1%; }
+/* Числа сравниваются по правому краю — иначе разряды не выстраиваются в столбец. */
+.table .col-num { text-align: right; white-space: nowrap; width: 1%; }
+
+/* Ячейка с SQL забирает остаток ширины и обрезается многоточием: длинный запрос
+   не должен раздвигать таблицу и выталкивать колонку статуса за экран. */
+.table .cell-sql { width: 100%; max-width: 0; }
+.table .cell-sql code {
+    display: block;
+    font-size: 12px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.badge-row { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.table-actions { display: inline-flex; gap: var(--space-2xs); }
+
+/* Подпись только для скринридера (пустой заголовок колонки действий). */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* ---------- Общий видимый фокус ---------- */
+.btn:focus-visible,
+a:focus-visible,
+summary:focus-visible,
+.editor-tab-btn:focus-visible,
+.tree-label:focus-visible {
+    outline: 2px solid var(--accent-line);
+    outline-offset: 2px;
+}
+
+/* ============================================================
+   Узкие экраны: рабочий стол складывается по вертикали, а не сжимается.
+   Навигатор становится верхней полосой фиксированной высоты.
+   ============================================================ */
+@media (max-width: 860px) {
+    .workbench {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(120px, 30%) 6px 1fr;
+    }
+    .navigator { grid-column: 1; grid-row: 1; border-right: none; border-bottom: 1px solid var(--border); }
+    /* Разделитель остаётся зазором между панелями, но не притворяется ручкой:
+       в стопке высота навигатора фиксирована (см. splitter.js). */
+    .splitter-v {
+        grid-column: 1;
+        grid-row: 2;
+        cursor: default;
+        pointer-events: none;
+    }
+    .splitter-v:hover, .splitter-v:focus-visible, .splitter-v.dragging { background: transparent; }
+    .editor-and-results { grid-column: 1; grid-row: 3; }
+    .topbar { gap: var(--space-sm); padding: 0 var(--space-sm); }
+    .topbar-nav { gap: 0; }
+    .nav-link { padding: var(--space-xs) var(--space-sm); }
+    .user-name { display: none; }
+    .page { padding: var(--space-lg) var(--space-md); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* Функциональность сохраняется, движение убирается полностью. */
+    *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+    }
+}

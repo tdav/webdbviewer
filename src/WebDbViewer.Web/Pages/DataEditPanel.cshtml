@@ -10,18 +10,21 @@
 @model bool
 
 <div class="data-edit-panel" data-edit-panel data-readonly="@(Model ? "true" : "false")" hidden>
-    <button type="button" class="btn btn-primary" data-edit-action="save"
-            title="Отправить накопленные изменения в базу данных">
-        Сохранить (<span data-edit-count>0</span>)
+    @* Счётчик изменений остаётся видимым: это не подпись кнопки, а число,
+       которое пользователь обязан видеть до отправки в базу. *@
+    <button type="button" class="btn btn-primary btn-icon btn-icon-count" data-edit-action="save"
+            aria-label="Сохранить изменения"
+            data-tip="Отправить накопленные изменения в базу данных">
+        @UiIcons.Save<span class="btn-count" data-edit-count>0</span>
     </button>
-    <button type="button" class="btn" data-edit-action="discard" title="Отбросить все несохранённые изменения">
-        Отменить
-    </button>
+    <button type="button" class="btn btn-icon" data-edit-action="discard"
+            aria-label="Отменить изменения"
+            data-tip="Отбросить все несохранённые правки">@UiIcons.Rollback</button>
     <span style="width:12px"></span>
-    <button type="button" class="btn" data-edit-action="add-row" title="Добавить новую строку">
-        + Строка
-    </button>
-    <button type="button" class="btn" data-edit-action="delete-rows" title="Пометить выделенные строки на удаление">
-        Удалить строки
-    </button>
+    <button type="button" class="btn btn-icon" data-edit-action="add-row"
+            aria-label="Добавить строку"
+            data-tip="Добавить пустую строку в конец таблицы">@UiIcons.RowAdd</button>
+    <button type="button" class="btn btn-icon" data-edit-action="delete-rows"
+            aria-label="Удалить выделенные строки"
+            data-tip="Пометить выделенные строки на удаление">@UiIcons.RowDelete</button>
 </div>

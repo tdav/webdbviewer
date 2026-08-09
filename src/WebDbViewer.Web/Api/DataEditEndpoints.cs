@@ -15,8 +15,8 @@ public sealed record RowEditDto(
     Dictionary<string, JsonElement>? KeyValues,
     Dictionary<string, JsonElement>? ChangedValues);
 
-/// <summary>Тело запроса пакетного редактирования данных.</summary>
-public sealed record DataEditRequest(Guid DsId, Guid? SessionId, List<RowEditDto> Edits);
+/// <summary>Тело запроса пакетного редактирования данных. Db — база сервера, если отличается от базы датасорса.</summary>
+public sealed record DataEditRequest(Guid DsId, Guid? SessionId, List<RowEditDto> Edits, string? Db = null);
 
 /// <summary>
 /// Endpoints inline-редактирования данных таблиц.
@@ -47,6 +47,7 @@ public static class DataEditEndpoints
         Guid dsId,
         string schema,
         string table,
+        string? db,
         CancellationToken ct)
     {
         if (dsId == Guid.Empty || string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(table))
@@ -57,7 +58,7 @@ public static class DataEditEndpoints
             return Results.NotFound(new { error = "Датасорс не найден." });
 
         var userName = http.User.Identity?.Name ?? "anonymous";
-        var session = await sessionManager.GetOrCreateAsync(userName, dsId, ct);
+        var session = await sessionManager.GetOrCreateAsync(userName, dsId, db, ct);
         var provider = providers.Get(config.Kind);
 
         TableInfo info;
@@ -128,7 +129,7 @@ public static class DataEditEndpoints
         IDbSession? session = null;
         if (request.SessionId is { } sid)
             session = await sessionManager.FindAsync(sid, ct);
-        session ??= await sessionManager.GetOrCreateAsync(userName, request.DsId, ct);
+        session ??= await sessionManager.GetOrCreateAsync(userName, request.DsId, request.Db, ct);
 
         var provider = providers.Get(config.Kind);
 

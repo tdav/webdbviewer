@@ -1,86 +1,114 @@
 @model WebDbViewer.Web.Pages.Connections.ConnectionFormVm
 @{
     var isNew = Model.Id is null;
+    var portPlaceholder = Model.Kind == DbKind.Oracle ? "1521" : "5432";
 }
-<div class="alert alert-info" style="background:var(--bg-panel);border-color:var(--border);color:var(--text)">
-    <h3 style="margin-top:0">@(isNew ? "Новое подключение" : $"Изменение подключения «{Model.Name}»")</h3>
-    <form id="connection-form">
+<form id="connection-form" class="modal-form">
+    <header class="modal-header">
+        <h2 class="modal-title" id="connection-dialog-title">
+            @(isNew ? "Новое подключение" : $"Подключение «{Model.Name}»")
+        </h2>
+    </header>
+
+    <div class="modal-body">
         <input type="hidden" name="id" value="@(Model.Id?.ToString() ?? "")" />
-        <div class="field-row">
-            <div class="field">
-                <label for="cf-name">Название *</label>
+
+        <div class="form-grid">
+            <div class="field span-7">
+                <label for="cf-name">Название <span class="field-required" aria-hidden="true">*</span></label>
                 <input type="text" id="cf-name" name="name" value="@Model.Name" required />
             </div>
-            <div class="field">
-                <label for="cf-kind">СУБД *</label>
-                <select id="cf-kind" name="kind">
+            <div class="field span-5">
+                <label for="cf-kind">СУБД <span class="field-required" aria-hidden="true">*</span></label>
+                <select id="cf-kind" name="kind" data-role="db-kind">
                     <option value="Postgres" selected="@(Model.Kind == DbKind.Postgres)">PostgreSQL</option>
                     <option value="Oracle" selected="@(Model.Kind == DbKind.Oracle)">Oracle</option>
                 </select>
             </div>
-        </div>
-        <div class="field-row">
-            <div class="field">
-                <label for="cf-host">Хост *</label>
-                <input type="text" id="cf-host" name="host" value="@Model.Host" required />
+
+            <div class="field span-6">
+                <label for="cf-host">Хост <span class="field-required" aria-hidden="true">*</span></label>
+                <input type="text" id="cf-host" name="host" value="@Model.Host" required autocomplete="off" />
             </div>
-            <div class="field" style="flex:0 1 110px">
+            <div class="field span-2">
                 <label for="cf-port">Порт</label>
-                <input type="number" id="cf-port" name="port" value="@(Model.Port > 0 ? Model.Port : null)" placeholder="5432 / 1521" min="1" max="65535" />
+                <input type="number" id="cf-port" name="port" value="@(Model.Port > 0 ? Model.Port : null)"
+                       placeholder="@portPlaceholder" min="1" max="65535" />
             </div>
-            <div class="field">
-                <label for="cf-database">База данных / сервис *</label>
-                <input type="text" id="cf-database" name="database" value="@Model.Database" required />
+            <div class="field span-4">
+                <label for="cf-database">База данных <span class="field-required" aria-hidden="true">*</span></label>
+                <input type="text" id="cf-database" name="database" value="@Model.Database" required autocomplete="off" />
             </div>
-        </div>
-        <div class="field-row">
-            <div class="field">
-                <label for="cf-username">Логин *</label>
+
+            <div class="field span-6">
+                <label for="cf-username">Логин <span class="field-required" aria-hidden="true">*</span></label>
                 <input type="text" id="cf-username" name="username" value="@Model.Username" required autocomplete="off" />
             </div>
-            <div class="field">
-                <label for="cf-password">Пароль @(isNew ? "*" : "(пусто — не менять)")</label>
-                <input type="password" id="cf-password" name="password" autocomplete="new-password" />
+            <div class="field span-6">
+                <label for="cf-password">
+                    Пароль
+                    @if (isNew)
+                    {
+                        <span class="field-required" aria-hidden="true">*</span>
+                    }
+                </label>
+                <input type="password" id="cf-password" name="password" autocomplete="new-password"
+                       aria-describedby="@(isNew ? null : "cf-password-hint")" />
+                @if (!isNew)
+                {
+                    <span class="field-hint" id="cf-password-hint">Пустое поле — пароль не меняется</span>
+                }
             </div>
-        </div>
-        <div class="field-row" style="align-items:center">
-            <div class="checkbox-field">
-                <input type="checkbox" id="cf-ssl" name="useSsl" value="true" checked="@Model.UseSsl" />
-                <label for="cf-ssl">SSL / шифрование</label>
-            </div>
-            <div class="checkbox-field">
-                <input type="checkbox" id="cf-readonly" name="readOnly" value="true" checked="@Model.ReadOnly" />
-                <label for="cf-readonly">Только чтение</label>
-            </div>
-            <div class="checkbox-field">
-                <input type="checkbox" id="cf-prod" name="isProduction" value="true" checked="@Model.IsProduction" />
-                <label for="cf-prod">Production <span class="badge badge-prod">PROD</span></label>
-            </div>
+
+            <fieldset class="field-group">
+                <legend>Режим доступа</legend>
+                <div class="checkbox-field">
+                    <input type="checkbox" id="cf-ssl" name="useSsl" value="true" checked="@Model.UseSsl" />
+                    <label for="cf-ssl">SSL / шифрование</label>
+                </div>
+                <div class="checkbox-field">
+                    <input type="checkbox" id="cf-readonly" name="readOnly" value="true" checked="@Model.ReadOnly" />
+                    <label for="cf-readonly">Только чтение</label>
+                </div>
+                <div class="checkbox-field">
+                    <input type="checkbox" id="cf-prod" name="isProduction" value="true" checked="@Model.IsProduction" />
+                    <label for="cf-prod">Боевая база <span class="badge badge-prod">PROD</span></label>
+                </div>
+                <div class="checkbox-field">
+                    <input type="checkbox" id="cf-all-schemas" name="allowAllSchemas" value="true" checked="@Model.AllowAllSchemas" />
+                    <label for="cf-all-schemas"
+                           title="Снимите флажок, чтобы навигатор, поиск и список схем показывали только схему подключения (Oracle — схема пользователя, PostgreSQL — search_path).">
+                        Все схемы / базы данных
+                    </label>
+                </div>
+            </fieldset>
         </div>
 
-        <div id="test-connection-result"></div>
+        <div id="test-connection-result" aria-live="polite"></div>
+    </div>
 
-        <div style="display:flex;gap:8px;margin-top:10px">
-            <button type="button" class="btn btn-primary"
-                    hx-post="/connections?handler=Save"
-                    hx-include="#connection-form"
-                    hx-target="#connections-list"
-                    hx-swap="innerHTML">
-                Сохранить
-            </button>
-            <button type="button" class="btn"
-                    hx-post="/connections?handler=Test"
-                    hx-include="#connection-form"
-                    hx-target="#test-connection-result"
-                    hx-swap="innerHTML"
-                    hx-indicator="#test-indicator">
-                Проверить подключение
-            </button>
-            <span id="test-indicator" class="htmx-indicator">Проверяем…</span>
-            <button type="button" class="btn btn-ghost"
-                    onclick="document.getElementById('connection-form-area').innerHTML = ''">
-                Отмена
-            </button>
-        </div>
-    </form>
-</div>
+    <footer class="modal-footer">
+        <button type="button" class="btn btn-icon"
+                aria-label="Проверить подключение"
+                data-tip="Подключиться к базе с введёнными данными и показать версию сервера"
+                hx-post="/connections?handler=Test"
+                hx-include="#connection-form"
+                hx-target="#test-connection-result"
+                hx-swap="innerHTML"
+                hx-indicator="#test-indicator">@UiIcons.Plug</button>
+        <span id="test-indicator" class="htmx-indicator">Проверяем…</span>
+
+        <span class="footer-spacer"></span>
+
+        <button type="button" class="btn btn-ghost btn-icon" data-action="close-dialog"
+                aria-label="Отмена"
+                data-tip="Закрыть окно, не сохраняя изменения">@UiIcons.Close</button>
+        <button type="button" class="btn btn-primary btn-icon"
+                aria-label="Сохранить подключение"
+                data-tip="Сохранить подключение"
+                hx-post="/connections?handler=Save"
+                hx-include="#connection-form"
+                hx-target="#connections-list"
+                hx-swap="innerHTML">@UiIcons.Save</button>
+    </footer>
+</form>

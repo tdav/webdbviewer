@@ -11,8 +11,8 @@ else
                 <th>Время</th>
                 <th>Пользователь</th>
                 <th>SQL</th>
-                <th>Длительность</th>
-                <th>Строк</th>
+                <th class="col-num">Длительность</th>
+                <th class="col-num">Строк</th>
                 <th>Статус</th>
                 <th>IP</th>
             </tr>
@@ -20,27 +20,27 @@ else
         <tbody>
             @foreach (var entry in Model)
             {
+                @* Всё, что читается посимвольно — время, SQL, длительность, счётчик, IP —
+                   идёт моноширинным: соседние строки должны сравниваться взглядом. *@
                 <tr>
-                    <td style="white-space:nowrap">@entry.StartedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")</td>
+                    <td class="cell-mono col-nowrap">@entry.StartedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")</td>
                     <td>@entry.UserName</td>
-                    <td>
-                        <code style="font-family:var(--mono);font-size:12px" title="@entry.SqlText">
-                            @(entry.SqlText.Length > 120 ? entry.SqlText[..120] + "…" : entry.SqlText)
-                        </code>
+                    <td class="cell-sql">
+                        <code title="@entry.SqlText">@(entry.SqlText.Length > 120 ? entry.SqlText[..120] + "…" : entry.SqlText)</code>
                     </td>
-                    <td>@entry.Duration.TotalMilliseconds.ToString("F0") мс</td>
-                    <td>@(entry.RowsAffected?.ToString() ?? "—")</td>
+                    <td class="cell-mono col-num">@entry.Duration.TotalMilliseconds.ToString("F0") мс</td>
+                    <td class="cell-mono col-num">@(entry.RowsAffected?.ToString() ?? "—")</td>
                     <td>
                         @if (entry.Success)
                         {
-                            <span class="badge badge-ssl">OK</span>
+                            <span class="badge badge-ok">OK</span>
                         }
                         else
                         {
-                            <span class="badge badge-prod" title="@entry.ErrorMessage">Ошибка</span>
+                            <span class="badge badge-error" title="@entry.ErrorMessage">Ошибка</span>
                         }
                     </td>
-                    <td>@(entry.ClientIp ?? "—")</td>
+                    <td class="cell-mono cell-muted">@(entry.ClientIp ?? "—")</td>
                 </tr>
             }
         </tbody>

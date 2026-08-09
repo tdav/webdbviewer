@@ -63,13 +63,19 @@ internal sealed class FakeDbProvider : IDbProvider
     public List<FakeDbConnection> OpenedConnections { get; } = [];
 
     public DbKind Kind => DbKind.Postgres;
+    public bool SupportsDatabaseLevel => true;
     public string? RowAddressPseudoColumn => null;
+
+    /// <summary>Базы, к которым открывались соединения (в порядке открытия).</summary>
+    public List<string> OpenedDatabases { get; } = [];
 
     public string BuildConnectionString(DataSourceConfig config, string plainPassword) => "fake";
 
     public Task<DbConnection> OpenConnectionAsync(DataSourceConfig config, string plainPassword, CancellationToken ct)
     {
         Interlocked.Increment(ref OpenCount);
+        lock (OpenedDatabases)
+            OpenedDatabases.Add(config.Database);
         var connection = new FakeDbConnection();
         connection.Open();
         lock (OpenedConnections)
@@ -84,6 +90,9 @@ internal sealed class FakeDbProvider : IDbProvider
         => throw new NotSupportedException();
 
     public Task<IReadOnlyList<string>> GetSchemasAsync(DbConnection connection, bool includeSystem, CancellationToken ct)
+        => throw new NotSupportedException();
+
+    public Task<IReadOnlyList<DbObjectNode>> GetDatabasesAsync(DbConnection connection, bool includeSystem, CancellationToken ct)
         => throw new NotSupportedException();
 
     public Task<SchemaSnapshot> LoadSchemaSnapshotAsync(DbConnection connection, string schemaName, CancellationToken ct)

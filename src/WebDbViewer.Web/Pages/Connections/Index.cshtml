@@ -3,21 +3,75 @@
 @{
     ViewData["Title"] = "Подключения";
 }
-<div class="page">
-    <h1>Подключения (датасорсы)</h1>
-
-    <p>
-        <button type="button" class="btn btn-primary"
+<div class="page page--constrained">
+    <header class="page-header">
+        <h1>
+            Подключения
+            <span class="page-count">Всего: <span id="connections-count">@Model.DataSources.Count</span></span>
+        </h1>
+        <button type="button" class="btn btn-primary btn-icon"
+                aria-label="Новое подключение"
+                data-tip="Добавить подключение к базе данных"
                 hx-get="/connections?handler=Form"
                 hx-target="#connection-form-area"
-                hx-swap="innerHTML">
-            ＋ Новое подключение
-        </button>
-    </p>
-
-    <div id="connection-form-area"></div>
+                hx-swap="innerHTML">@UiIcons.Plus</button>
+    </header>
 
     <div id="connections-list">
         <partial name="_List" model="Model.DataSources" />
     </div>
 </div>
+
+@* Форма живёт в нативном <dialog>: фокус-ловушка, Esc и подложка — без своего кода.
+   Содержимое подгружается HTMX в #connection-form-area, диалог открывается после свопа. *@
+<dialog id="connection-dialog" class="modal" aria-labelledby="connection-dialog-title">
+    <div id="connection-form-area"></div>
+</dialog>
+
+@section Scripts {
+    <script>
+        (function () {
+            var dialog = document.getElementById("connection-dialog");
+            var area = document.getElementById("connection-form-area");
+            if (!dialog || !area) return;
+
+            // Форма приехала — показываем диалог и ставим фокус в первое поле.
+            document.body.addEventListener("htmx:afterSwap", function (e) {
+                if (e.detail.target !== area) return;
+                if (!dialog.open) dialog.showModal();
+                var first = area.querySelector("input:not([type=hidden]), select");
+                if (first) first.focus();
+            });
+
+            // Сохранение прошло — закрываем диалог (список обновляется своим свопом).
+            document.body.addEventListener("htmx:afterRequest", function (e) {
+                if (!dialog.open || !dialog.contains(e.detail.elt)) return;
+                var path = e.detail.requestConfig ? e.detail.requestConfig.path || "" : "";
+                if (path.indexOf("handler=Save") >= 0 && e.detail.successful) dialog.close();
+            });
+
+            // Закрытие любым способом (Esc, «Отмена», подложка) — очищаем форму,
+            // иначе при следующем открытии на миг видно данные прошлого подключения.
+            dialog.addEventListener("close", function () { area.innerHTML = ""; });
+
+            dialog.addEventListener("click", function (e) {
+                if (e.target === dialog) dialog.close(); // клик по подложке
+                if (e.target.closest("[data-action='close-dialog']")) dialog.close();
+            });
+
+            // Порт по умолчанию зависит от СУБД — подсказка в поле следует за выбором.
+            area.addEventListener("change", function (e) {
+                if (!e.target.matches("[data-role='db-kind']")) return;
+                var port = document.getElementById("cf-port");
+                if (port) port.placeholder = e.target.value === "Oracle" ? "1521" : "5432";
+            });
+
+            // Счётчик подключений в заголовке — по числу строк обновлённого списка.
+            document.body.addEventListener("htmx:afterSwap", function (e) {
+                if (!e.detail.target || e.detail.target.id !== "connections-list") return;
+                var counter = document.getElementById("connections-count");
+                if (counter) counter.textContent = e.detail.target.querySelectorAll("tbody tr").length;
+            });
+        })();
+    </script>
+}

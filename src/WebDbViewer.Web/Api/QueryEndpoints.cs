@@ -12,12 +12,14 @@ namespace WebDbViewer.Web.Api;
 /// <param name="SessionId">Существующая сессия БД (если нет — создаётся/переиспользуется по пользователю).</param>
 /// <param name="CaretOffset">Позиция каретки: выполняется statement под курсором.</param>
 /// <param name="WholeScript">true — выполнить весь скрипт, игнорируя позицию каретки.</param>
+/// <param name="Db">База данных сервера, если отличается от базы датасорса (навигатор по всем базам).</param>
 public sealed record ExecuteQueryRequest(
     Guid DsId,
     string Sql,
     Guid? SessionId = null,
     int? CaretOffset = null,
-    bool WholeScript = false);
+    bool WholeScript = false,
+    string? Db = null);
 
 /// <summary>
 /// Endpoints выполнения SQL и постраничного чтения данных таблиц.
@@ -70,7 +72,7 @@ public static class QueryEndpoints
         IDbSession? session = null;
         if (request.SessionId is { } sid)
             session = await sessionManager.FindAsync(sid, ct);
-        session ??= await sessionManager.GetOrCreateAsync(userName, request.DsId, ct);
+        session ??= await sessionManager.GetOrCreateAsync(userName, request.DsId, request.Db, ct);
 
         // Сплит скрипта: полноценный IStatementSplitter из DI, иначе наивный фолбэк.
         var splitter = services.GetService<IStatementSplitter>() ?? NaiveStatementSplitter.Instance;
@@ -308,6 +310,7 @@ public static class QueryEndpoints
         string? orderBy = null,
         bool desc = false,
         string? filter = null,
+        string? db = null,
         CancellationToken ct = default)
     {
         if (dsId == Guid.Empty || string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(table))
@@ -318,7 +321,7 @@ public static class QueryEndpoints
             return Results.NotFound(new { error = "Датасорс не найден." });
 
         var userName = http.User.Identity?.Name ?? "anonymous";
-        var session = await sessionManager.GetOrCreateAsync(userName, dsId, ct);
+        var session = await sessionManager.GetOrCreateAsync(userName, dsId, db, ct);
         var provider = providers.Get(config.Kind);
 
         var tableInfo = await provider.GetTableInfoAsync(session.Connection, schema, table, ct);

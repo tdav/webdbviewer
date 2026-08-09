@@ -12,6 +12,8 @@ internal sealed class FakeDbSession : IDbSession
     public Guid SessionId { get; } = Guid.NewGuid();
     public Guid DataSourceId { get; init; } = Guid.NewGuid();
     public string UserName { get; init; } = "tester";
+    public string Database { get; init; } = "demo";
+    public bool IsPrimary { get; init; } = true;
     public DbConnection Connection { get; } = new FakeDbConnection();
     public bool AutoCommit { get; set; } = true;
     public bool InTransaction => false;
