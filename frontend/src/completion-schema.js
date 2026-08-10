@@ -11,8 +11,11 @@ const KEY = (dsId, schema) => (dsId || '') + '/' + (schema || '');
 
 // --- Загрузка ---
 
+// Возвращает true при успехе (в т.ч. 304 — кэш уже актуален) и false при неудаче
+// (204, сетевая ошибка, не-2xx) — вызывающая сторона (editor.js) решает по этому
+// флагу, можно ли считать ключ загруженным и не повторять попытку.
 export async function load(dsId, schema) {
-  if (!dsId) return;
+  if (!dsId) return false;
   const key = KEY(dsId, schema);
   if (inflight.has(key)) return inflight.get(key);
 
@@ -24,12 +27,13 @@ export async function load(dsId, schema) {
     if (known && known.etag) headers['If-None-Match'] = known.etag;
     try {
       const res = await fetch(url, { headers });
-      if (res.status === 304) return;          // снапшот в кэше актуален
-      if (!res.ok || res.status === 204) return; // без локального кэша работаем как раньше
+      if (res.status === 304) return true;        // снапшот в кэше актуален
+      if (!res.ok || res.status === 204) return false; // без локального кэша работаем как раньше
       const data = await res.json();
       cache.set(key, { data, etag: res.headers.get('ETag') });
+      return true;
     } catch (e) {
-      // Сеть недоступна — подсказки просто пойдут только с сервера.
+      return false; // Сеть недоступна — подсказки просто пойдут только с сервера.
     } finally {
       inflight.delete(key);
     }
@@ -114,7 +118,10 @@ export function localCompletions({ text, pos, dsId, schema, dialect }) {
   const stmt = currentStatement(text, pos);
   const before = stmt.text.slice(0, stmt.caret);
 
-  const word = /[\w$#]*$/.exec(before)[0];
+  // Кавычка входит в границу слова — то же правило, что и у серверного пути в editor.js
+  // (context.matchBefore(/[\w"$#]*/)): иначе вставка квотированного идентификатора
+  // задваивает открывающую кавычку, когда вариант выбран до ответа сервера.
+  const word = /[\w"$#]*$/.exec(before)[0];
   const from = pos - word.length;
   const qualifier = /([\w$#]+|"[^"]+")\s*\.\s*[\w$#]*$/.exec(before);
   const prevWord = (/([a-zA-Z]+)\s+[\w$#]*$/.exec(before) || [])[1];

@@ -10,13 +10,19 @@
 import { EditorView, keymap, showTooltip } from '@codemirror/view';
 import { EditorState, Compartment, Prec, StateField, StateEffect } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
-import { sql, PostgreSQL, PLSQL } from '@codemirror/lang-sql';
+import { sql, PostgreSQL, PLSQL, keywordCompletionSource } from '@codemirror/lang-sql';
 import { autocompletion, startCompletion, completionStatus } from '@codemirror/autocomplete';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import './completion-schema.js';
 
 const COMPLETION_DEBOUNCE_MS = 250;
+
+// Раздел 3.7 спеки: таймингов локальной фильтрации в обычном режиме никто не слушает —
+// периодический таймер заводим только когда параметр явно запрошен в URL.
+if (new URLSearchParams(location.search).has('debugCompletion')) {
+  setInterval(() => console.log('[completion] localCompletions', window.WebDbCompletion.stats()), 5000);
+}
 
 // --- Тема редактора (без внешних зависимостей — air-gapped) ---
 // Цвета не задаются здесь: редактор читает те же токены, что и остальное
@@ -105,8 +111,10 @@ function makeCompletionSource(textarea) {
   let timer = null;
   let controller = null;
   let pendingResolve = null;
-  // Ответ сервера для конкретной каретки: ключ «позиция|текст» отсекает
-  // ответ, пришедший к уже изменившемуся запросу.
+  // Ответ сервера для конкретной каретки: ключ «датасорс|схема|позиция|текст» отсекает
+  // ответ, пришедший к уже изменившемуся запросу или к уже смененному датасорсу/схеме
+  // (см. isPrimaryDatabaseSelected — тот же класс проблемы: чужая база не должна
+  // подмешиваться в подсказки).
   let serverAnswer = null;
 
   function dropPending() {
@@ -114,7 +122,8 @@ function makeCompletionSource(textarea) {
     if (pendingResolve) { pendingResolve(null); pendingResolve = null; }
   }
 
-  const answerKey = (context) => context.pos + '|' + context.state.doc.toString();
+  const answerKey = (context) =>
+    textarea.dataset.dsId + '|' + (currentSchema() || '') + '|' + context.pos + '|' + context.state.doc.toString();
 
   async function fetchCompletions(context, word) {
     if (controller) controller.abort(); // отмена устаревшего запроса
@@ -163,13 +172,22 @@ function makeCompletionSource(textarea) {
   }
 
   function localResult(context) {
-    return window.WebDbCompletion.localCompletions({
+    const local = window.WebDbCompletion.localCompletions({
       text: context.state.doc.toString(),
       pos: context.pos,
       dsId: textarea.dataset.dsId,
       schema: currentSchema(),
       dialect: textarea.dataset.dialect,
     });
+    // Ключевые слова — встроенным keywordCompletionSource (тот же диалект и регистр,
+    // что и подсветка), свой список не заводим. override отключает штатные language-data
+    // источники, поэтому вызываем источник сами и подмешиваем результат в локальный —
+    // merge() ниже дедуплицирует по label и уберёт повтор, когда придёт серверный ответ
+    // (сервер тоже возвращает ключевые слова, kind: "keyword", тем же регистром).
+    const keywords = keywordSourceFor(textarea.dataset.dialect)(context);
+    if (!keywords) return local;
+    if (!local) return keywords;
+    return { ...local, options: local.options.concat(keywords.options) };
   }
 
   /// Запрашивает сервер в фоне и, когда ответ пришёл, перезапускает список:
@@ -202,7 +220,10 @@ function makeCompletionSource(textarea) {
 
   return (context) => {
     const chain = context.matchBefore(/[\w"$.]*/);
-    const word = context.matchBefore(/[\w"$]*/);
+    // Кавычка входит в границу слова: это же правило (совпадающее с localCompletions
+    // в completion-schema.js) решает, где начинается вставляемый текст, — иначе
+    // вставка квотированного идентификатора задваивает открывающую кавычку.
+    const word = context.matchBefore(/[\w"$#]*/);
     if (!context.explicit && (!chain || chain.from === chain.to)) return null;
     if (!textarea.dataset.dsId) return null;
     // Кэш метаданных строится только для базы из настроек подключения: в чужой базе
@@ -360,8 +381,13 @@ function loadSchemaMap(dsId, schema) {
   if (!dsId) return;
   const key = dsId + '/' + (schema || '');
   if (key === lastSchemaLoad) return; // повторная загрузка той же схемы не нужна
-  lastSchemaLoad = key;
-  window.WebDbCompletion.load(dsId, schema);
+  // Ключ помечаем загруженным только после успеха: сбой сети или 204 (интроспекция
+  // не удалась) не должны блокировать локальный кэш до смены схемы/датасорса —
+  // следующий вызов должен получить шанс повторить попытку. Параллельные вызовы
+  // с тем же ключом не дублируют запрос — дедупликация в completion-schema.js (inflight).
+  window.WebDbCompletion.load(dsId, schema).then((ok) => {
+    if (ok) lastSchemaLoad = key;
+  });
 }
 
 // --- Текущая схема из тулбара (используется автодополнением) ---
@@ -485,10 +511,28 @@ function currentThemeExt() {
   return isDarkTheme() ? darkTheme : lightTheme;
 }
 
+/// SQLDialect (lang-sql) по имени диалекта датасорса — общий выбор для подсветки
+/// и для источника ключевых слов ниже.
+function sqlDialectFor(name) {
+  return (name || '').toLowerCase().includes('oracle') ? PLSQL : PostgreSQL;
+}
+
 /// Расширение подсветки/грамматики по имени диалекта датасорса.
 function dialectExtension(name) {
-  const dialect = (name || '').toLowerCase().includes('oracle') ? PLSQL : PostgreSQL;
-  return sql({ dialect, upperCaseKeywords: true });
+  return sql({ dialect: sqlDialectFor(name), upperCaseKeywords: true });
+}
+
+// Источник ключевых слов встроенного лексикона lang-sql, один на диалект —
+// пересобирать регэксп/массив на каждую букву незачем (диалектов всего два).
+const keywordSources = new Map(); // SQLDialect -> CompletionSource
+function keywordSourceFor(name) {
+  const dialect = sqlDialectFor(name);
+  let source = keywordSources.get(dialect);
+  if (!source) {
+    source = keywordCompletionSource(dialect, true); // true — верхний регистр, как dialectExtension
+    keywordSources.set(dialect, source);
+  }
+  return source;
 }
 
 function initEditor(textarea) {
