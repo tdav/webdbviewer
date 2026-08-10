@@ -664,7 +664,16 @@ document.addEventListener('change', (e) => {
     delete textarea.dataset.sessionId;
     view.dispatch({ effects: dialectCompartment.reconfigure(ext) });
   }
-  loadSchemaMap(select.value || '', currentSchema());
+  // Схема здесь ещё от прежнего датасорса: HTMX перерисовывает #editor-scope
+  // (и вместе с ним select[schema]) асинхронно, по этому же событию change.
+  // Грузим без схемы — сервер сам подставит схему по умолчанию для НОВОГО
+  // датасорса (см. CompletionEndpoints.DefaultSchemaFor), а не пойдёт с чужой
+  // схемой в каталог (для Oracle это лишний многосекундный ALL_*-запрос).
+  // Ключ совпадёт с тем, что потом спросит currentSchema(): OnGetScopeAsync не
+  // принимает schema, поэтому перерисованный select[schema] всегда сбрасывается
+  // на «— по умолчанию —» (value=""), т.е. на тот же null — повторной загрузки
+  // после HTMX-свопа не нужно.
+  loadSchemaMap(select.value || '', null);
 });
 
 // Инициализация: при загрузке страницы и после HTMX-свопов.

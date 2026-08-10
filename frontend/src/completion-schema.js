@@ -66,35 +66,6 @@ function quote(identifier, dialect) {
   return plain ? identifier : '"' + identifier.replace(/"/g, '""') + '"';
 }
 
-// Порт SemanticCompleter.MakeAlias: первые буквы snake/camel-сегментов, при коллизии — цифра.
-// Расхождение с серверным правилом — дефект: пользователь получил бы разный текст
-// в зависимости от того, успел ли прийти ответ сервера.
-export function makeAlias(table, taken) {
-  let initials = '';
-  let newSegment = true;
-  for (const ch of table) {
-    // \p{Nd} — та же Unicode-категория (Decimal Digit Number), что распознаёт
-    // char.IsDigit в C#: не только ASCII 0-9, но и, например, арабо-индийские цифры.
-    if (ch === '_' || ch === '$' || ch === '#' || /\p{Nd}/u.test(ch)) {
-      newSegment = true;
-      continue;
-    }
-    const isLetter = /\p{L}/u.test(ch);
-    if (newSegment && isLetter) {
-      initials += ch.toLowerCase();
-      newSegment = false;
-    } else if (isLetter && ch === ch.toUpperCase() && ch !== ch.toLowerCase()) {
-      initials += ch.toLowerCase();
-    }
-  }
-  const base = initials.length ? initials : 't';
-  let alias = base;
-  let n = 2;
-  while (taken.has(alias)) alias = base + n++;
-  taken.add(alias);
-  return alias;
-}
-
 // Приоритеты повторяют SemanticCompleter.Priority; boost в CodeMirror — «чем больше, тем выше»,
 // поэтому знак инвертируется. Локальный вариант на единицу ниже серверного аналога:
 // при совпадении сервер должен побеждать.
@@ -162,18 +133,20 @@ export function localCompletions({ text, pos, dsId, schema, dialect }) {
     const table = tableByName.get((ref ? ref.name : q).toLowerCase());
     if (table) pushColumns(options, table, PRIORITY.scopeColumn, dialect);
   } else if (prevWord && TABLE_CONTEXT.has(prevWord.toLowerCase())) {
-    // Позиция имени таблицы: только таблицы и вью, с автоалиасом.
-    const taken = new Set(refs.map((r) => r.alias).filter(Boolean).map((a) => a.toLowerCase()));
-    const autoAlias = prevWord.toLowerCase() !== 'into' && prevWord.toLowerCase() !== 'update'
-      && prevWord.toLowerCase() !== 'table';
-    pushTables(options, snapshot.tables, dialect, autoAlias ? taken : null);
+    // Позиция имени таблицы: только таблицы и вью.
+    // ponytail: автоалиас (SemanticCompleter.MakeAlias) здесь раньше добавлялся
+    // безусловно, а сервер — только при включённом CompletionOptions.AutoAliasTables
+    // (по умолчанию false, /api/completion его не включает). Расхождение — прямой
+    // баг: один и тот же вариант вставлял разный текст до/после ответа сервера.
+    // Пока сервер не включит опцию, клиент алиас не добавляет.
+    pushTables(options, snapshot.tables, dialect);
   } else {
     // Общий случай: колонки таблиц текущего statement, затем таблицы и функции.
     for (const ref of refs) {
       const table = tableByName.get(ref.name.toLowerCase());
       if (table) pushColumns(options, table, PRIORITY.scopeColumn, dialect);
     }
-    pushTables(options, snapshot.tables, dialect, null);
+    pushTables(options, snapshot.tables, dialect);
     pushRoutines(options, snapshot.routines, dialect);
   }
 
@@ -202,14 +175,12 @@ function columnDetail(c) {
   return parts.join(' · ');
 }
 
-function pushTables(options, tables, dialect, takenAliases) {
+function pushTables(options, tables, dialect) {
   for (const t of tables) {
-    let apply = quote(t.n, dialect);
-    if (takenAliases) apply = apply + ' ' + makeAlias(t.n, takenAliases);
     options.push({
       label: t.n,
       type: 'class',
-      apply,
+      apply: quote(t.n, dialect),
       detail: t.t === 'table' ? undefined : t.t,
       info: t.cm || undefined,
       boost: boostOf(PRIORITY.contextTable),
@@ -231,4 +202,4 @@ function pushRoutines(options, routines, dialect) {
 }
 
 // Публичный API для editor.js и обработчика кнопки «Обновить метаданные».
-window.WebDbCompletion = { load, reset, localCompletions, stats, makeAlias };
+window.WebDbCompletion = { load, reset, localCompletions, stats };
