@@ -11,9 +11,10 @@ import { EditorView, keymap, showTooltip } from '@codemirror/view';
 import { EditorState, Compartment, Prec, StateField, StateEffect } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
 import { sql, PostgreSQL, PLSQL } from '@codemirror/lang-sql';
-import { autocompletion } from '@codemirror/autocomplete';
+import { autocompletion, startCompletion } from '@codemirror/autocomplete';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
+import './completion-schema.js';
 
 const COMPLETION_DEBOUNCE_MS = 250;
 
@@ -104,13 +105,16 @@ function makeCompletionSource(textarea) {
   let timer = null;
   let controller = null;
   let pendingResolve = null;
+  // Ответ сервера для конкретной каретки: ключ «позиция|текст» отсекает
+  // ответ, пришедший к уже изменившемуся запросу.
+  let serverAnswer = null;
 
-  // Отложенный запрос вытеснен более свежим. Его промис обязан завершиться:
-  // брошенный неразрешённым, он заставляет CodeMirror ждать вечно.
   function dropPending() {
     if (timer) { clearTimeout(timer); timer = null; }
     if (pendingResolve) { pendingResolve(null); pendingResolve = null; }
   }
+
+  const answerKey = (context) => context.pos + '|' + context.state.doc.toString();
 
   async function fetchCompletions(context, word) {
     if (controller) controller.abort(); // отмена устаревшего запроса
@@ -148,12 +152,46 @@ function makeCompletionSource(textarea) {
     }
   }
 
+  /// Локальные варианты, которых нет в серверном ответе. Серверные точнее:
+  /// у них разобранный scope (CTE, подзапросы, FK-сниппеты).
+  function merge(local, server) {
+    if (!server) return local;
+    if (!local) return server;
+    const seen = new Set(server.options.map((o) => o.label));
+    const extra = local.options.filter((o) => !seen.has(o.label));
+    return extra.length ? { ...server, options: server.options.concat(extra) } : server;
+  }
+
+  function localResult(context) {
+    return window.WebDbCompletion.localCompletions({
+      text: context.state.doc.toString(),
+      pos: context.pos,
+      dsId: textarea.dataset.dsId,
+      schema: currentSchema(),
+      dialect: textarea.dataset.dialect,
+    });
+  }
+
+  /// Запрашивает сервер в фоне и, когда ответ пришёл, перезапускает список:
+  /// на втором проходе источник увидит serverAnswer и объединит его с локальным.
+  /// Debounce обязателен: локальный результат отдаётся без validFor, поэтому источник
+  /// вызывается на каждую букву — без задержки это был бы запрос на каждое нажатие.
+  function requestServer(context, word, view, immediate) {
+    const key = answerKey(context);
+    if (timer) { clearTimeout(timer); timer = null; }
+    const run = () => {
+      timer = null;
+      fetchCompletions(context, word).then((result) => {
+        if (!result) return;
+        serverAnswer = { key, result };
+        if (view) startCompletion(view);
+      });
+    };
+    if (immediate) run();
+    else timer = setTimeout(run, COMPLETION_DEBOUNCE_MS);
+  }
+
   return (context) => {
-    // chain — вся цепочка с квалификаторами («schema.», «alias.tbl.»): по ней решаем,
-    // просить ли подсказки. word — только начатый идентификатор после последней точки:
-    // именно его CodeMirror заменяет вставкой и по нему фильтрует список.
-    // Если считать from по chain, то после «schema.» ни один вариант не совпадёт
-    // с текстом «schema.» и список окажется пустым.
     const chain = context.matchBefore(/[\w"$.]*/);
     const word = context.matchBefore(/[\w"$]*/);
     if (!context.explicit && (!chain || chain.from === chain.to)) return null;
@@ -162,9 +200,24 @@ function makeCompletionSource(textarea) {
     // подсказки объектов были бы из другой БД — не предлагаем их вовсе.
     if (!isPrimaryDatabaseSelected()) return null;
 
-    // Ctrl+Space: пользователь ждёт список сейчас, а не через четверть секунды.
-    // Debounce существует, чтобы не слать запрос на каждую букву, — к явному вызову
-    // это не относится.
+    const key = answerKey(context);
+    const local = localResult(context);
+
+    // Фаза 2: ответ сервера для этой самой каретки уже получен — отдаём объединённый список.
+    if (serverAnswer && serverAnswer.key === key) {
+      const merged = merge(local, serverAnswer.result);
+      serverAnswer = null;
+      return merged;
+    }
+
+    // Фаза 1: локальные варианты сразу, сервер — в фоне (с debounce, кроме Ctrl+Space).
+    if (local) {
+      if (pendingResolve) { pendingResolve(null); pendingResolve = null; }
+      requestServer(context, word, context.view, context.explicit);
+      return local;
+    }
+
+    // Снапшота нет (не загрузился, схема слишком большая) — прежнее поведение.
     if (context.explicit) {
       dropPending();
       return fetchCompletions(context, word);
@@ -289,21 +342,17 @@ function makeSignatureListener(textarea) {
   });
 }
 
-// --- Прогрев кэша метаданных ---
-// Интроспекция схемы занимает секунды. Без прогрева её ждёт первый же Ctrl+Space,
-// поэтому запускаем её при открытии редактора и при смене датасорса или схемы.
-let lastWarmup = null;
+// --- Загрузка снапшота схемы ---
+// Снапшот заменяет прежний прогрев кэша: его построение и есть прогрев,
+// а на клиенте он даёт мгновенные подсказки без сети.
+let lastSchemaLoad = null;
 
-function warmupCompletion(dsId, schema) {
+function loadSchemaMap(dsId, schema) {
   if (!dsId) return;
   const key = dsId + '/' + (schema || '');
-  if (key === lastWarmup) return; // повторный прогрев той же схемы не нужен
-  lastWarmup = key;
-  fetch('/api/completion/warmup', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dsId, schema }),
-  }).catch(() => { /* прогрев необязателен: подсказки просто придут медленнее */ });
+  if (key === lastSchemaLoad) return; // повторная загрузка той же схемы не нужна
+  lastSchemaLoad = key;
+  window.WebDbCompletion.load(dsId, schema);
 }
 
 // --- Текущая схема из тулбара (используется автодополнением) ---
@@ -470,7 +519,7 @@ function initEditor(textarea) {
   textarea.style.display = 'none';
   views.push({ view, textarea });
 
-  warmupCompletion(textarea.dataset.dsId, currentSchema());
+  loadSchemaMap(textarea.dataset.dsId, currentSchema());
 
   // Перед submit формы — синхронизация значения в скрытый textarea.
   const form = textarea.closest('form');
@@ -593,7 +642,7 @@ document.addEventListener('change', (e) => {
   // Смена схемы — тот же датасорс, но подсказки пойдут по другому набору объектов.
   if (select.dataset.role === 'schema-select') {
     const editor = activeEditor();
-    if (editor) warmupCompletion(editor.textarea.dataset.dsId, select.value || null);
+    if (editor) loadSchemaMap(editor.textarea.dataset.dsId, select.value || null);
     return;
   }
 
@@ -606,7 +655,7 @@ document.addEventListener('change', (e) => {
     delete textarea.dataset.sessionId;
     view.dispatch({ effects: dialectCompartment.reconfigure(ext) });
   }
-  warmupCompletion(select.value || '', currentSchema());
+  loadSchemaMap(select.value || '', currentSchema());
 });
 
 // Инициализация: при загрузке страницы и после HTMX-свопов.
