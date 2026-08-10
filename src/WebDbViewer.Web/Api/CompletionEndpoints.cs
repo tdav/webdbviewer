@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using WebDbViewer.Completion;
 using WebDbViewer.Core;
 
@@ -40,6 +41,7 @@ public static class CompletionEndpoints
         CompletionApiRequest request,
         IDataSourceStore dataSourceStore,
         ICompletionEngine engine,
+        ILoggerFactory loggerFactory,
         CancellationToken ct)
     {
         if (request.DsId == Guid.Empty || request.Sql is null)
@@ -50,6 +52,7 @@ public static class CompletionEndpoints
         if (config is null)
             return Results.NotFound(new { error = "Датасорс не найден." });
 
+        var startedAt = Stopwatch.GetTimestamp();
         var items = await engine.CompleteAsync(new CompletionRequest
         {
             DataSourceId = request.DsId,
@@ -57,6 +60,10 @@ public static class CompletionEndpoints
             CaretOffset = request.CaretOffset,
             DefaultSchema = DefaultSchemaFor(config, request.DefaultSchema),
         }, config.Kind, ct);
+
+        loggerFactory.CreateLogger(typeof(CompletionEndpoints))
+            .LogDebug("Обработка /api/completion датасорса {DataSourceId}: {ElapsedMs} мс, вариантов {Count}",
+                request.DsId, (int)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds, items.Count);
 
         return Results.Json(items);
     }
