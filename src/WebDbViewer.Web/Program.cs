@@ -206,6 +206,8 @@ try
     app.MapAuditApi();
     app.MapDdlApi();
     app.MapDataEditApi();
+    app.MapExportApi();
+    app.MapImportApi();
 
     // Метабаза: создать схему/таблицы, перенести ключи Data Protection, завести первого администратора
     await app.Services.InitializePostgresMetaStoreAsync();

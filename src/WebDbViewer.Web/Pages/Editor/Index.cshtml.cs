@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using WebDbViewer.Core;
@@ -28,6 +29,12 @@ public sealed class EditorIndexModel : PageModel
         _providers = providers;
         _logger = logger;
     }
+
+    /// <summary>
+    /// Предел файла, который открывается во вкладке редактора. Дамп на сотни мегабайт
+    /// незачем гонять в браузер: такой файл выполняют через POST /api/import/sql.
+    /// </summary>
+    private const long EditorImportLimitBytes = 2 * 1024 * 1024;
 
     public IReadOnlyList<DataSourceConfig> DataSources { get; private set; } = [];
 
@@ -109,6 +116,120 @@ public sealed class EditorIndexModel : PageModel
         {
             _logger.LogError(ex, "Ошибка получения скрипта: ds={Ds}, {Schema}.{Name} ({Type}, {Script})", ds, schema, name, type, script);
             return Partial("_EditorTab", tab with { Content = $"-- Не удалось получить скрипт «{schema}.{name}»:\n-- {ex.Message}" });
+        }
+    }
+
+    /// <summary>
+    /// Вкладка с SQL-скриптом выгрузки таблицы
+    /// (hx-get="/editor?handler=ExportTab&amp;ds=…&amp;schema=…&amp;name=…").
+    /// Скрипт собирается тем же кодом, что и скачиваемый файл (<see cref="ExportEndpoints"/>),
+    /// но с пределом строк: редактор не рассчитан на выгрузку целой таблицы.
+    /// Полный файл пользователь получает Ctrl+кликом по той же кнопке дерева.
+    /// </summary>
+    public async Task<IActionResult> OnGetExportTabAsync(
+        int index, Guid ds, string? schema, string? name, string? db,
+        [FromServices] IEnumerable<IDdlGenerator> generators,
+        [FromServices] IDbProviderRegistry providers,
+        CancellationToken ct)
+    {
+        DataSources = await _store.GetAllAsync(ct);
+        if (index < 1)
+            index = 1;
+
+        var config = await _store.GetAsync(ds, ct);
+        var tab = new EditorTabVm
+        {
+            Index = index,
+            Title = name is null ? "Экспорт" : $"SQL {name}",
+            DefaultDsId = ds == Guid.Empty ? config?.Id : ds,
+            DefaultDialect = config?.Kind.ToString().ToLowerInvariant(),
+        };
+
+        if (config is null || string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(name))
+            return Partial("_EditorTab", tab with { Content = "-- Не заданы параметры таблицы для выгрузки." });
+
+        var generator = generators.FirstOrDefault(g => g.Kind == config.Kind);
+        if (generator is null)
+            return Partial("_EditorTab", tab with { Content = $"-- Генератор DDL для «{config.Kind}» не зарегистрирован." });
+
+        try
+        {
+            // Собственное соединение, как и у endpoint'а экспорта: выгрузка не должна
+            // занимать единственное соединение сессии пользователя.
+            await using var connection = await _connections.OpenAsync(config, db, ct);
+
+            var provider = providers.Get(config.Kind);
+            var target = provider.QuoteIdentifier(schema) + "." + provider.QuoteIdentifier(name);
+
+            var ddl = await DdlText.GetAsync(generator, connection, schema, name, "table", null, ct);
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT * FROM {target}";
+            command.CommandTimeout = config.CommandTimeoutSeconds;
+            await using var reader = await command.ExecuteReaderAsync(ct);
+
+            var writer = new StringWriter();
+            await ExportEndpoints.WriteScriptBodyAsync(
+                writer,
+                ExportEndpoints.TableHeader(config, schema, name, structure: ddl is not null, data: true),
+                ddl, reader, target, config.Kind, provider.QuoteIdentifier,
+                ExportLimits.EditorRowLimit, ct);
+
+            return Partial("_EditorTab", tab with { Content = writer.ToString() });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка выгрузки в SQL: ds={Ds}, {Schema}.{Name}", ds, schema, name);
+            return Partial("_EditorTab", tab with
+            {
+                Content = $"-- Не удалось выгрузить «{schema}.{name}»:\n-- {ex.Message}",
+            });
+        }
+    }
+
+    /// <summary>
+    /// Вкладка с содержимым загруженного .sql-файла: файл открывается в редакторе,
+    /// но НЕ выполняется — запуск остаётся за пользователем. Для выполнения без
+    /// загрузки текста в браузер есть POST /api/import/sql.
+    /// </summary>
+    public async Task<IActionResult> OnPostImportTabAsync(int index, Guid ds, IFormFile? file, CancellationToken ct)
+    {
+        DataSources = await _store.GetAllAsync(ct);
+        if (index < 1)
+            index = 1;
+
+        var config = await _store.GetAsync(ds, ct);
+        var tab = new EditorTabVm
+        {
+            Index = index,
+            Title = file?.FileName ?? "Импорт",
+            DefaultDsId = ds == Guid.Empty ? config?.Id : ds,
+            DefaultDialect = config?.Kind.ToString().ToLowerInvariant(),
+        };
+
+        if (file is null || file.Length == 0)
+            return Partial("_EditorTab", tab with { Content = "-- Файл не выбран или пуст." });
+
+        if (file.Length > EditorImportLimitBytes)
+            return Partial("_EditorTab", tab with
+            {
+                Content = $"-- Файл «{file.FileName}» ({file.Length / 1024} КБ) слишком велик для редактора.\n"
+                          + $"-- Предел — {EditorImportLimitBytes / 1024} КБ; выполните его через импорт без открытия текста.",
+            });
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            // detectEncodingFromByteOrderMarks: файл из другого инструмента может прийти с BOM.
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var content = await reader.ReadToEndAsync(ct);
+
+            return Partial("_EditorTab", tab with { Content = content });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка чтения файла импорта: ds={Ds}, файл={File}", ds, file.FileName);
+            return Partial("_EditorTab", tab with { Content = $"-- Не удалось прочитать файл:\n-- {ex.Message}" });
         }
     }
 

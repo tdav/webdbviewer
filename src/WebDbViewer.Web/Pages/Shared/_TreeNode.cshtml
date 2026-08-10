@@ -51,12 +51,25 @@
     var ddlUrl = scriptUrlBase;
     // Скрипт DROP не предлагается для датасорса «только чтение»: выполнить его там всё равно нельзя.
     var dropUrl = scriptUrlBase is null || Model.ReadOnly ? null : scriptUrlBase + "&script=drop";
+
+    // Экспорт в SQL — там же, где есть данные. Обычный клик открывает скрипт вкладкой
+    // (с пределом строк), Ctrl+клик уводит на endpoint и скачивает таблицу целиком:
+    // тот же приём, что и у ссылки на данные ниже.
+    // Только таблицы: у представления «структура + данные» означало бы CREATE VIEW и
+    // выгрузку производных строк — для этого есть экспорт результата запроса.
+    var exportQuery = node.Type is not DbObjectType.Table || node.Schema is null ? null : string.Concat(
+        "ds=", Model.DsId.ToString(),
+        "&schema=", Uri.EscapeDataString(node.Schema),
+        "&name=", Uri.EscapeDataString(node.Name),
+        Model.Database is { Length: > 0 } exportDb ? "&db=" + Uri.EscapeDataString(exportDb) : "");
+    var exportTabUrl = exportQuery is null ? null : "/editor?handler=ExportTab&" + exportQuery;
+    var exportFileUrl = exportQuery is null ? null : "/api/export/sql?" + exportQuery.Replace("&name=", "&table=");
 }
 @* Кнопка DDL одинакова в обеих ветках разметки — вынесена в локальную функцию. *@
 @{
     void RenderActions()
     {
-        if (ddlUrl is null && dataUrl is null)
+        if (ddlUrl is null && dataUrl is null && exportTabUrl is null)
             return;
         <span class="tree-actions">
             @if (dropUrl is not null)
@@ -86,6 +99,20 @@
                         aria-label="Показать DDL: @node.Name"
                         data-tip="Открыть DDL «@node.Name» во вкладке редактора"
                         onclick="event.stopPropagation()">@UiIcons.Ddl</button>
+            }
+            @if (exportTabUrl is not null)
+            {
+                <a class="tree-open-data" href="@exportFileUrl" download
+                   hx-get="@exportTabUrl"
+                   @* Ctrl/Cmd/Shift+клик оставляем браузеру: он скачает файл по href,
+                      минуя предел строк, который стоит на вкладке редактора. *@
+                   hx-trigger="click[!ctrlKey&amp;&amp;!metaKey&amp;&amp;!shiftKey]"
+                   hx-vals='js:{index: window.wdvNextTabIndex ? window.wdvNextTabIndex() : 1}'
+                   hx-target="#editor-panes"
+                   hx-swap="beforeend"
+                   aria-label="Экспорт в SQL: @node.Name"
+                   data-tip="Открыть SQL-скрипт «@node.Name» во вкладке (Ctrl+клик — скачать файл целиком)"
+                   onclick="event.stopPropagation()">@UiIcons.Export</a>
             }
             @if (dataUrl is not null)
             {

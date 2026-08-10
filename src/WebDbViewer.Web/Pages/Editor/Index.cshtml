@@ -107,6 +107,13 @@
                         aria-label="Остановить выполнение"
                         data-tip="Прервать выполняющийся запрос">@UiIcons.Stop</button>
 
+                <button type="button" id="btn-export-query" class="btn btn-icon" data-action="export-query"
+                        aria-label="Экспорт результата в INSERT"
+                        data-tip="Выгрузить результат запроса из вкладки в .sql-файл с INSERT-операторами">@UiIcons.Export</button>
+                <button type="button" id="btn-import" class="btn btn-icon" data-action="open-import"
+                        aria-label="Импорт SQL-файла"
+                        data-tip="Загрузить .sql-файл: открыть в редакторе или выполнить на подключении">@UiIcons.Import</button>
+
                 <span class="sep"></span>
 
                 <label for="editor-ds" style="margin:0">Датасорс</label>
@@ -188,6 +195,60 @@
     </div>
 </div>
 
+@* Импорт живёт в нативном <dialog>: фокус-ловушка, Esc и подложка — без своего кода,
+   как и у формы подключения. *@
+<dialog id="import-dialog" class="modal" aria-labelledby="import-dialog-title">
+    @* Режим «в редактор» отправляется через htmx: после swap editor.js ловит htmx:afterSwap
+       и поднимает CodeMirror на новой вкладке. Ручная вставка HTML этого не даёт. *@
+    <form id="import-form" class="modal-form"
+          hx-post="/editor?handler=ImportTab"
+          hx-encoding="multipart/form-data"
+          hx-target="#editor-panes"
+          hx-swap="beforeend"
+          hx-trigger="wdv:import-editor"
+          hx-vals='js:{index: window.wdvNextTabIndex ? window.wdvNextTabIndex() : 1, ds: document.getElementById("editor-ds").value}'>
+        @Html.AntiForgeryToken()
+        <header class="modal-header">
+            <h2 class="modal-title" id="import-dialog-title">Импорт SQL-файла</h2>
+        </header>
+
+        <div class="modal-body">
+            <label for="import-file">Файл .sql</label>
+            <input type="file" id="import-file" name="file" accept=".sql,text/plain" required />
+
+            <fieldset style="border:0;padding:0;margin:var(--space-md) 0 0">
+                <legend>Что сделать с файлом</legend>
+                @* По умолчанию — открыть в редакторе: пользователь видит, что именно
+                   выполняет, прежде чем это выполнится на боевой базе. *@
+                <label class="checkbox-field">
+                    <input type="radio" name="mode" value="editor" checked />
+                    Открыть в редакторе, не выполняя
+                </label>
+                <label class="checkbox-field">
+                    <input type="radio" name="mode" value="transaction" />
+                    Выполнить целиком в одной транзакции (ошибка — полный откат)
+                </label>
+                <label class="checkbox-field">
+                    <input type="radio" name="mode" value="continue" />
+                    Выполнить по одному оператору, продолжая после ошибок
+                </label>
+            </fieldset>
+
+            <div id="import-result" aria-live="polite"></div>
+        </div>
+
+        <footer class="modal-footer">
+            <span class="footer-spacer"></span>
+            <button type="button" class="btn btn-ghost btn-icon" data-action="close-dialog"
+                    aria-label="Отмена"
+                    data-tip="Закрыть окно, ничего не импортируя">@UiIcons.Close</button>
+            <button type="button" id="btn-import-run" class="btn btn-primary btn-icon"
+                    aria-label="Импортировать"
+                    data-tip="Загрузить файл выбранным способом">@UiIcons.Import</button>
+        </footer>
+    </form>
+</dialog>
+
 @section Scripts {
     <script>
         // Номер новой вкладки: максимальный существующий + 1. По количеству вкладок
@@ -201,6 +262,156 @@
             });
             return max + 1;
         };
+
+        // Импорт .sql: открыть файл вкладкой редактора либо выполнить на подключении.
+        (function () {
+            var dialog = document.getElementById("import-dialog");
+            var form = document.getElementById("import-form");
+            if (!dialog || !form) return;
+
+            var fileInput = document.getElementById("import-file");
+            var result = document.getElementById("import-result");
+            var runButton = document.getElementById("btn-import-run");
+
+            function report(text, isError) {
+                result.textContent = text;
+                result.className = isError ? "form-error" : "";
+            }
+
+            function token() {
+                var input = form.querySelector('input[name="__RequestVerificationToken"]');
+                return input ? input.value : "";
+            }
+
+            function selectedDatabase() {
+                // Список баз рисуется обработчиком Scope и может отсутствовать (Oracle).
+                var select = document.querySelector('#editor-scope select[name="db"]');
+                return select ? select.value : "";
+            }
+
+            document.addEventListener("click", function (e) {
+                if (e.target.closest('[data-action="open-import"]')) {
+                    report("", false);
+                    dialog.showModal();
+                    return;
+                }
+                if (dialog.open && e.target.closest('[data-action="close-dialog"]')) {
+                    dialog.close();
+                }
+            });
+
+            runButton.addEventListener("click", async function () {
+                var file = fileInput.files[0];
+                if (!file) {
+                    report("Выберите .sql-файл.", true);
+                    return;
+                }
+
+                var mode = form.querySelector('input[name="mode"]:checked').value;
+                if (mode === "editor") {
+                    htmx.trigger(form, "wdv:import-editor");
+                    dialog.close();
+                    return;
+                }
+
+                var body = new FormData();
+                body.append("file", file);
+                body.append("ds", document.getElementById("editor-ds").value);
+                body.append("db", selectedDatabase());
+                body.append("mode", mode);
+
+                report("Выполняется…", false);
+                runButton.setAttribute("aria-disabled", "true");
+                try {
+                    var response = await fetch("/api/import/sql", {
+                        method: "POST",
+                        body: body,
+                        headers: { "RequestVerificationToken": token() }
+                    });
+                    var data = await response.json();
+
+                    if (!response.ok) {
+                        report(data.error || ("Импорт не выполнен (HTTP " + response.status + ")."), true);
+                        return;
+                    }
+
+                    var summary = "Операторов: " + data.statements
+                        + "; выполнено: " + data.executed
+                        + "; строк затронуто: " + data.rowsAffected
+                        + "; за " + data.elapsedMs + " мс.";
+                    if (data.errors && data.errors.length) {
+                        summary += " Ошибок: " + data.errors.length
+                            + ". Первая — оператор №" + data.errors[0].index + ": " + data.errors[0].message;
+                    }
+                    report(summary, !!(data.errors && data.errors.length));
+                } catch (err) {
+                    report("Импорт не выполнен: " + err.message, true);
+                } finally {
+                    runButton.removeAttribute("aria-disabled");
+                }
+            });
+        })();
+
+        // Экспорт результата запроса из активной вкладки в .sql с INSERT-операторами.
+        (function () {
+            var button = document.getElementById("btn-export-query");
+            if (!button) return;
+
+            button.addEventListener("click", async function () {
+                // CodeMirror держит текст у себя — syncAll переносит его в textarea.
+                if (window.WebDbEditor && window.WebDbEditor.syncAll) window.WebDbEditor.syncAll();
+
+                var pane = document.querySelector(".editor-pane.active");
+                var textarea = (pane && pane.querySelector("textarea[data-sql-editor]"))
+                    || document.querySelector("textarea[data-sql-editor]");
+                var sql = textarea ? textarea.value.trim() : "";
+
+                var status = document.getElementById("results-status");
+                if (!sql) {
+                    if (status) status.textContent = "Экспорт: во вкладке нет запроса.";
+                    return;
+                }
+
+                // ponytail: имя приёмника спрашиваем нативным prompt — отдельная модалка
+                // ради одного поля не окупается.
+                var target = window.prompt(
+                    "Имя таблицы-приёмника для INSERT-операторов (можно «схема.таблица»):", "");
+                if (!target) return;
+
+                var db = document.querySelector('#editor-scope select[name="db"]');
+                if (status) status.textContent = "Экспорт результата…";
+
+                try {
+                    var response = await fetch("/api/export/sql/query", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            ds: document.getElementById("editor-ds").value,
+                            sql: sql,
+                            target: target,
+                            db: db ? db.value : null
+                        })
+                    });
+
+                    if (!response.ok) {
+                        var error = await response.json().catch(function () { return {}; });
+                        if (status) status.textContent = "Экспорт не выполнен: " + (error.error || response.status);
+                        return;
+                    }
+
+                    var blob = await response.blob();
+                    var url = URL.createObjectURL(blob);
+                    var link = document.createElement("a");
+                    link.href = url;
+                    link.download = target.replace(/"/g, "") + ".sql";
+                    link.click();
+                    URL.revokeObjectURL(url);
+                    if (status) status.textContent = "Экспорт выполнен: " + link.download;
+                } catch (err) {
+                    if (status) status.textContent = "Экспорт не выполнен: " + err.message;
+                }
+            });
+        })();
 
         // Переключение вкладок редактора (делегирование на панели вкладок)
         (function () {

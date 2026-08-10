@@ -135,6 +135,16 @@ public static class UiIcons
         Stroke("<path d='M9 1.9H4.2a1.2 1.2 0 0 0-1.2 1.2v9.8a1.2 1.2 0 0 0 1.2 1.2h7.6a1.2 1.2 0 0 0 1.2-1.2V5.9z'/>" +
                "<path d='M9 1.9v4h4'/><path d='M6.6 8.6 5.2 10l1.4 1.4M9.4 8.6 10.8 10l-1.4 1.4'/>");
 
+    /// <summary>Стрелка вниз к полке — выгрузить объект в SQL-скрипт.</summary>
+    public static readonly HtmlString Export =
+        Stroke("<path d='M8 2.4v7.2'/><path d='M5.2 6.8 8 9.6l2.8-2.8'/>" +
+               "<path d='M2.6 11.4v1.4a1.2 1.2 0 0 0 1.2 1.2h8.4a1.2 1.2 0 0 0 1.2-1.2v-1.4'/>");
+
+    /// <summary>Стрелка вверх от полки — залить SQL-скрипт в базу.</summary>
+    public static readonly HtmlString Import =
+        Stroke("<path d='M8 9.6V2.4'/><path d='M5.2 5.2 8 2.4l2.8 2.8'/>" +
+               "<path d='M2.6 11.4v1.4a1.2 1.2 0 0 0 1.2 1.2h8.4a1.2 1.2 0 0 0 1.2-1.2v-1.4'/>");
+
     // --- Правка данных в гриде ---
 
     /// <summary>Строка со плюсом — добавить строку в таблицу.</summary>
