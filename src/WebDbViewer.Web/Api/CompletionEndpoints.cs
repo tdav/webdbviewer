@@ -10,11 +10,6 @@ namespace WebDbViewer.Web.Api;
 /// <param name="DefaultSchema">Текущая схема (по умолчанию public для PostgreSQL).</param>
 public sealed record CompletionApiRequest(Guid DsId, string Sql, int CaretOffset, string? DefaultSchema = null);
 
-/// <summary>Тело запроса прогрева кэша метаданных.</summary>
-/// <param name="DsId">Идентификатор датасорса.</param>
-/// <param name="Schema">Схема для прогрева; null — схема по умолчанию для датасорса.</param>
-public sealed record CompletionWarmupRequest(Guid DsId, string? Schema = null);
-
 /// <summary>
 /// Endpoint автодополнения SQL.
 /// ВАЖНО (для владельца Program.cs): перед app.MapCompletionApi() необходимо
@@ -26,7 +21,7 @@ public static class CompletionEndpoints
     {
         app.MapPost("/api/completion", CompleteAsync).RequireAuthorization();
         app.MapPost("/api/completion/signature", SignatureAsync).RequireAuthorization();
-        app.MapPost("/api/completion/warmup", WarmupAsync).RequireAuthorization();
+        app.MapGet("/api/completion/schema-map", SchemaMapAsync).RequireAuthorization();
         return app;
     }
 
@@ -95,42 +90,49 @@ public static class CompletionEndpoints
     }
 
     /// <summary>
-    /// Прогрев кэша метаданных, чтобы первый вызов автодополнения не ждал интроспекцию схемы.
-    /// Возвращает 202 сразу: прогрев идёт в фоне, его сбой на редактор не влияет.
+    /// Снапшот схемы для клиентского автодополнения. Он же прогрев кэша: построение ответа
+    /// заполняет MetadataCache, отдельный warmup-запрос не нужен.
+    /// 204 — схему определить не удалось или интроспекция упала: редактор просто работает
+    /// без локального кэша, подсказки идут с сервера как раньше.
     /// </summary>
-    private static async Task<IResult> WarmupAsync(
-        CompletionWarmupRequest request,
+    private static async Task<IResult> SchemaMapAsync(
+        Guid dsId,
+        string? schema,
+        HttpContext http,
         IDataSourceStore dataSourceStore,
         IMetadataCache metadata,
         ILoggerFactory loggerFactory,
         CancellationToken ct)
     {
-        if (request.DsId == Guid.Empty)
+        if (dsId == Guid.Empty)
             return Results.BadRequest(new { error = "Не задан датасорс." });
 
-        var config = await dataSourceStore.GetAsync(request.DsId, ct);
+        var config = await dataSourceStore.GetAsync(dsId, ct);
         if (config is null)
             return Results.NotFound(new { error = "Датасорс не найден." });
 
-        var schema = DefaultSchemaFor(config, request.Schema);
-        if (string.IsNullOrWhiteSpace(schema))
-            return Results.Accepted();
+        var schemaName = DefaultSchemaFor(config, schema);
+        if (string.IsNullOrWhiteSpace(schemaName))
+            return Results.NoContent();
 
-        var logger = loggerFactory.CreateLogger(typeof(CompletionEndpoints));
-        // Токен запроса не передаётся: прогрев переживает завершение HTTP-ответа.
-        _ = Task.Run(async () =>
+        SchemaSnapshot snapshot;
+        try
         {
-            try
-            {
-                await metadata.WarmupAsync(request.DsId, [schema], CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Прогрев кэша метаданных {Schema} датасорса {DataSourceId} не удался",
-                    schema, request.DsId);
-            }
-        }, CancellationToken.None);
+            snapshot = await metadata.GetSchemaAsync(dsId, schemaName, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            loggerFactory.CreateLogger(typeof(CompletionEndpoints))
+                .LogWarning(ex, "Снапшот схемы {Schema} датасорса {DataSourceId} получить не удалось", schemaName, dsId);
+            return Results.NoContent();
+        }
 
-        return Results.Accepted();
+        var etag = SchemaMapDto.ETagFor(snapshot);
+        if (SchemaMapDto.IsNotModified(etag, http.Request.Headers.IfNoneMatch))
+            return Results.StatusCode(StatusCodes.Status304NotModified);
+
+        if (etag is not null)
+            http.Response.Headers.ETag = etag;
+        return Results.Json(SchemaMapDto.From(snapshot));
     }
 }
