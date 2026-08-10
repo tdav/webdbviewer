@@ -377,7 +377,9 @@ window.WebDb = { toast, toggleTheme, currentTheme, blockScreen, unblockScreen };
 // тулбара и пересоздаётся при каждой смене датасорса или базы.
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest ? e.target.closest('[data-action="refresh-metadata"]') : null;
-  if (!btn) return;
+  // aria-disabled не блокирует клик сам по себе — повторный клик во время
+  // запроса отсекаем здесь же (см. такой же приём в editor.js).
+  if (!btn || btn.getAttribute('aria-disabled') === 'true') return;
   e.preventDefault();
 
   const ds = document.querySelector('[data-role="datasource-select"]');
@@ -388,11 +390,19 @@ document.addEventListener('click', async (e) => {
 
   btn.setAttribute('aria-disabled', 'true');
   try {
-    await fetch('/api/metadata/refresh', {
+    const res = await fetch('/api/metadata/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dsId, schema }),
     });
+    if (!res.ok) {
+      // Сервер отказал (400 — не задан датасорс, 404 — датасорс не найден и т.п.):
+      // клиентский кэш не трогаем, показываем отдельный тост об ошибке.
+      if (window.WebDb && typeof window.WebDb.toast === 'function') {
+        window.WebDb.toast(`Не удалось обновить метаданные (${res.status})`, 'error');
+      }
+      return;
+    }
     if (window.WebDbCompletion) {
       window.WebDbCompletion.reset(dsId, schema);
       await window.WebDbCompletion.load(dsId, schema);
