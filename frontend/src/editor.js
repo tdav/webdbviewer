@@ -188,6 +188,9 @@ function makeCompletionSource(textarea) {
         // или увёл каретку в другое место — тогда список не должен открываться
         // заново без спроса. Проверяем, что попап всё ещё открыт и каретка
         // осталась там же, где был отправлен запрос.
+        // Статуса 'pending' здесь быть не может: источник один (override) и фазу 1
+        // он отдаёт синхронно, поэтому к приходу сетевого ответа попап уже 'active'.
+        // Если источник станет асинхронным или их станет несколько — условие пересмотреть.
         if (view && completionStatus(view.state) === 'active' && answerKey({ pos: view.state.selection.main.head, state: view.state }) === key) {
           startCompletion(view);
         }
