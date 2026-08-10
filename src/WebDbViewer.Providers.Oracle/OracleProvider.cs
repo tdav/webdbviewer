@@ -368,12 +368,15 @@ public sealed partial class OracleProvider : IDbProvider
             ? [("owner", owner)]
             : [("owner", owner), (paramTableName, tableFilter)];
 
+        // RESULT_CACHE: schema introspection repeats the same dictionary queries per editor session.
+        // Oracle catalogs are slow, and the result set changes only on DDL.
+
         // 1. Объекты: таблицы, представления, материализованные представления
         //    (mview дублируется в ALL_OBJECTS как TABLE — дедупликация в пользу MATERIALIZED VIEW).
         var relations = new Dictionary<string, DbObjectType>(StringComparer.Ordinal);
         {
             var sql = $"""
-                SELECT o.object_name, o.object_type
+                SELECT /*+ RESULT_CACHE */ o.object_name, o.object_type
                 FROM all_objects o
                 WHERE o.owner = :owner
                   AND o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW')
@@ -400,7 +403,7 @@ public sealed partial class OracleProvider : IDbProvider
         var tableComments = new Dictionary<string, string>(StringComparer.Ordinal);
         {
             var sql = $"""
-                SELECT c.table_name, c.comments
+                SELECT /*+ RESULT_CACHE */ c.table_name, c.comments
                 FROM all_tab_comments c
                 WHERE c.owner = :owner AND c.comments IS NOT NULL{(tableFilter is null ? "" : " AND c.table_name = :table_name")}
                 """;
@@ -414,7 +417,7 @@ public sealed partial class OracleProvider : IDbProvider
         var columnComments = new Dictionary<(string Table, string Column), string>();
         {
             var sql = $"""
-                SELECT c.table_name, c.column_name, c.comments
+                SELECT /*+ RESULT_CACHE */ c.table_name, c.column_name, c.comments
                 FROM all_col_comments c
                 WHERE c.owner = :owner AND c.comments IS NOT NULL{(tableFilter is null ? "" : " AND c.table_name = :table_name")}
                 """;
@@ -428,7 +431,7 @@ public sealed partial class OracleProvider : IDbProvider
         var pkByTable = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         {
             var sql = $"""
-                SELECT c.table_name, cc.column_name
+                SELECT /*+ RESULT_CACHE */ c.table_name, cc.column_name
                 FROM all_constraints c
                 JOIN all_cons_columns cc
                   ON cc.owner = c.owner AND cc.constraint_name = c.constraint_name AND cc.table_name = c.table_name
@@ -450,7 +453,7 @@ public sealed partial class OracleProvider : IDbProvider
         var columnsByTable = new Dictionary<string, List<ColumnInfo>>(StringComparer.Ordinal);
         {
             var sql = $"""
-                SELECT c.table_name, c.column_name, c.data_type, c.data_length, c.data_precision, c.data_scale,
+                SELECT /*+ RESULT_CACHE */ c.table_name, c.column_name, c.data_type, c.data_length, c.data_precision, c.data_scale,
                        c.nullable, c.data_default, c.column_id
                 FROM all_tab_columns c
                 WHERE c.owner = :owner{(tableFilter is null ? "" : " AND c.table_name = :table_name")}

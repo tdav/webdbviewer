@@ -247,7 +247,12 @@ public sealed class MetadataCache : IMetadataCache, IMetadataPersistence
     /// </summary>
     private async Task<SchemaSnapshot> LoadCoreAsync(Guid dataSourceId, string schemaName, SchemaSnapshot? previous, CancellationToken ct)
     {
+        var startedAt = _time.GetTimestamp();
         var snapshot = await _loader.LoadAsync(dataSourceId, schemaName, ct).ConfigureAwait(false);
+        _logger.LogDebug("Интроспекция схемы {Schema} датасорса {DataSourceId}: {ElapsedMs} мс, таблиц {Tables}",
+            schemaName, dataSourceId,
+            (int)_time.GetElapsedTime(startedAt).TotalMilliseconds, snapshot.Tables.Count);
+
         if (snapshot.LoadedAt == default)
             snapshot = snapshot with { LoadedAt = _time.GetUtcNow() };
 
