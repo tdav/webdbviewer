@@ -11,7 +11,7 @@ import { EditorView, keymap, showTooltip } from '@codemirror/view';
 import { EditorState, Compartment, Prec, StateField, StateEffect } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
 import { sql, PostgreSQL, PLSQL } from '@codemirror/lang-sql';
-import { autocompletion, startCompletion } from '@codemirror/autocomplete';
+import { autocompletion, startCompletion, completionStatus } from '@codemirror/autocomplete';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import './completion-schema.js';
@@ -184,7 +184,13 @@ function makeCompletionSource(textarea) {
       fetchCompletions(context, word).then((result) => {
         if (!result) return;
         serverAnswer = { key, result };
-        if (view) startCompletion(view);
+        // Ответ мог прийти уже после того, как пользователь закрыл попап (Escape)
+        // или увёл каретку в другое место — тогда список не должен открываться
+        // заново без спроса. Проверяем, что попап всё ещё открыт и каретка
+        // осталась там же, где был отправлен запрос.
+        if (view && completionStatus(view.state) === 'active' && answerKey({ pos: view.state.selection.main.head, state: view.state }) === key) {
+          startCompletion(view);
+        }
       });
     };
     if (immediate) run();
