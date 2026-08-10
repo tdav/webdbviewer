@@ -15,8 +15,15 @@ public sealed record TreeNodeVm
     /// <summary>База данных, в которой находится объект; null — база из конфигурации датасорса.</summary>
     public string? Database { get; init; }
 
-    /// <summary>СУБД датасорса; задаётся у узлов-баз, чтобы иконка отличала Oracle от PostgreSQL.</summary>
+    /// <summary>СУБД датасорса; задаётся только у корневого узла, чтобы иконка отличала Oracle от PostgreSQL.</summary>
     public DbKind? Kind { get; init; }
+
+    /// <summary>
+    /// Узел занимает в дереве место базы данных: схема Oracle сразу под датасорсом.
+    /// Рисуется цилиндром, чтобы второй уровень выглядел одинаково в обеих СУБД;
+    /// на тип объекта и поведение узла не влияет.
+    /// </summary>
+    public bool AsDatabase { get; init; }
 
     /// <summary>true — узел нельзя раскрывать (результат поиска и т.п.).</summary>
     public bool NoExpand { get; init; }
@@ -133,19 +140,17 @@ public static class DbObjectIcons
     private static readonly HtmlString fallbackIcon =
         Icon("<circle cx='8' cy='8' r='2.4'/>");
 
-    // Цилиндр с буквой СУБД: датасорсы Oracle и PostgreSQL должны различаться
-    // раньше, чем прочитана подпись. Набор монохромный (DESIGN.md), поэтому
-    // различие в форме, а не в цвете; средняя перемычка цилиндра убрана под букву.
-    private static HtmlString KindIcon(string letter) => Icon(
-        "<ellipse cx='8' cy='3.6' rx='5' ry='2.1'/>" +
-        "<path d='M3 3.6v8.8c0 1.16 2.24 2.1 5 2.1s5-.94 5-2.1V3.6'/>" +
-        "<text x='8' y='12.2' fill='currentColor' stroke='none' font-size='7.5' font-weight='600' " +
-        "font-family='system-ui, sans-serif' text-anchor='middle'>" + letter + "</text>");
+    // Фирменный логотип СУБД: датасорсы Oracle и PostgreSQL должны различаться
+    // раньше, чем прочитана подпись. Единственное цветное исключение в монохромном
+    // наборе — логотип узнаётся цветом, перерисовывать его штрихом нельзя.
+    // Файлы 20×20, в дереве масштабируются до 14px (.tree-icon .obj-icon).
+    private static HtmlString KindIcon(string file, string alt) => new(
+        "<img class=\"obj-icon\" src=\"/images/" + file + "\" alt=\"\" title=\"" + alt + "\">");
 
     private static readonly Dictionary<DbKind, HtmlString> kindIcons = new()
     {
-        [DbKind.Postgres] = KindIcon("P"),
-        [DbKind.Oracle] = KindIcon("O"),
+        [DbKind.Postgres] = KindIcon("postgres_icon.png", "PostgreSQL"),
+        [DbKind.Oracle] = KindIcon("oracle_icon.png", "Oracle"),
     };
 
     /// <summary>Возвращает готовую SVG-иконку для типа объекта.</summary>

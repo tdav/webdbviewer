@@ -328,6 +328,36 @@ function isPrimaryDatabaseSelected() {
 // --- Выполнение SQL ---
 let lastExecutionId = null;
 
+// Таблица-источник строк результата: правка в панели результатов возможна только
+// для простого SELECT из одной таблицы. Джойн, объединение, подзапрос, алиас —
+// строка результата уже не соответствует строке таблицы, и правка выключается.
+// ponytail: разбор регуляркой. Полный парсер здесь не окупается — непонятый
+// запрос просто остаётся нередактируемым, а не правится наугад.
+const SIMPLE_SELECT =
+  /^select\s+[\s\S]+?\sfrom\s+(?:("(?:[^"]|"")+"|[\w$#]+)\s*\.\s*)?("(?:[^"]|"")+"|[\w$#]+)\s*(?:(?:where|order\s+by|group\s+by|having|limit|offset|fetch|for)\b[\s\S]*)?$/i;
+
+function detectSourceTable(sql, dialect) {
+  if (!sql) return null;
+  const text = sql
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--[^\n]*/g, ' ')
+    .trim()
+    .replace(/;+$/, '')
+    .trim();
+  if (/\b(join|union|except|intersect)\b/i.test(text)) return null;
+  // Второй select — подзапрос: FROM ниже относился бы уже не к нему.
+  if ((text.match(/\bselect\b/gi) || []).length > 1) return null;
+  const m = SIMPLE_SELECT.exec(text);
+  if (!m) return null;
+  // Регистр идентификатора без кавычек сервер сворачивает сам: Oracle — к верхнему,
+  // PostgreSQL — к нижнему. В каталог мы идём точным именем, поэтому делаем это здесь.
+  const oracle = (dialect || '').toLowerCase().includes('oracle');
+  const name = (id) => (id.startsWith('"')
+    ? id.slice(1, -1).replace(/""/g, '"')
+    : (oracle ? id.toUpperCase() : id.toLowerCase()));
+  return { schema: m[1] ? name(m[1]) : null, table: name(m[2]) };
+}
+
 async function executeSql(view, textarea, wholeScript) {
   const dsId = textarea.dataset.dsId;
   if (!dsId) { toast('Не выбран датасорс для выполнения запроса.'); return true; }
@@ -362,12 +392,20 @@ async function executeSql(view, textarea, wholeScript) {
     }
     lastExecutionId = data.executionId;
     setRunningState(true);
+    // Схема в запросе может быть не указана — тогда берём выбранную в тулбаре:
+    // именно в ней сервер и разрешит имя таблицы.
+    const source = detectSourceTable(data.statementSql, textarea.dataset.dialect);
+    const schema = source && (source.schema || currentSchema());
     // Грид (grid.js) подхватывает событие и подключается к SSE-стриму.
     document.dispatchEvent(new CustomEvent('webdb:execute', {
       detail: {
         executionId: data.executionId,
         dsId,
         gridTarget: textarea.dataset.gridTarget || null,
+        // Источник строк для правки результата; null — запрос сложнее простого SELECT.
+        source: schema
+          ? { dsId, db: database, schema, table: source.table, dialect: textarea.dataset.dialect || '' }
+          : null,
       },
     }));
   } catch (e) {
@@ -441,6 +479,27 @@ function initEditor(textarea) {
     form.addEventListener('submit', () => syncAll(form));
     form.addEventListener('htmx:configRequest', () => syncAll(form));
   }
+
+  // Открытие данных таблицы: вкладка приходит с готовым SELECT и выполняется сразу.
+  // Атрибут снимается, иначе повторный initAll (htmx:load после swap) запустил бы
+  // тот же запрос второй раз.
+  if (textarea.dataset.autorun === '1') {
+    delete textarea.dataset.autorun;
+    selectDatabase(textarea.dataset.database);
+    executeSql(view, textarea, false);
+  }
+}
+
+// Таблица может лежать в базе, отличной от выбранной в тулбаре: без переключения
+// запрос ушёл бы в текущую базу и вернул «relation does not exist».
+function selectDatabase(name) {
+  if (!name) return;
+  const select = document.querySelector('[data-role="database-select"]');
+  if (!select || select.value === name) return;
+  if (![...select.options].some((o) => o.value === name)) return;
+  select.value = name;
+  // change подхватывает htmx на самом селекте — он перечитывает список схем.
+  select.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function syncAll(root) {

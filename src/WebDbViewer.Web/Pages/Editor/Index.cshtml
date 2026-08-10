@@ -184,13 +184,30 @@
             <div class="results-tabs">
                 <button type="button" class="editor-tab-btn active" data-results-tab="grid">Результаты</button>
                 <button type="button" class="editor-tab-btn" data-results-tab="messages">Сообщения</button>
+
+                @* Правка строк результата. Доступна, только когда запрос — простой SELECT
+                   из одной таблицы: grid.js сам включает и выключает эти кнопки.
+                   Кнопки с подписью: доступное имя даёт видимый текст, поэтому
+                   aria-label здесь не нужен — он бы только разошёлся с подписью. *@
+                <div class="results-actions">
+                    <button type="button" class="btn btn-ghost btn-sm" data-row-action="insert" aria-disabled="true"
+                            data-tip="Вставить строку в таблицу результата">@UiIcons.RowAdd<span>Вставить</span></button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-row-action="update" aria-disabled="true"
+                            data-tip="Изменить выделенную строку">@UiIcons.Pencil<span>Изменить</span></button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-row-action="delete" aria-disabled="true"
+                            data-tip="Удалить выделенные строки из таблицы">@UiIcons.Trash<span>Удалить</span></button>
+                    @* Подпись меняется вместе с состоянием — её переписывает splitter.js. *@
+                    <button type="button" class="btn btn-ghost btn-sm" data-action="results-toggle"
+                            aria-expanded="true" aria-controls="results-container"
+                            data-tip="Свернуть или развернуть панель результатов">@UiIcons.ChevronDown<span data-toggle-label>Свернуть</span></button>
+                </div>
             </div>
             <div class="results-body" id="results-container" data-role="results">
                 @* data-result-grid — селектор, по которому grid.js создаёт виртуализованный грид
                    и подключается к SSE-стриму результатов *@
                 <div id="results-grid" data-result-grid></div>
             </div>
-            <div class="results-status" id="results-status" data-role="results-status">Готово</div>
+            
         </section>
     </div>
 </div>

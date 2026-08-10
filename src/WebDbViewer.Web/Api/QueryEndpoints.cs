@@ -114,6 +114,10 @@ public static class QueryEndpoints
             executionId = running.ExecutionId,
             sessionId = session.SessionId,
             statementCount = statements.Count,
+            // Текст выполняемого оператора — клиенту, чтобы понять, из какой таблицы
+            // пришли строки (правка результата в панели результатов). Для скрипта из
+            // нескольких операторов такого соответствия нет — отдаём null.
+            statementSql = statements.Count == 1 ? statements[0].Text : null,
         });
     }
 

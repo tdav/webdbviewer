@@ -31,6 +31,7 @@
         : isRoutine ? "(" + (attrs is not null && attrs.TryGetValue("signature", out var s) ? s : "") + ")"
         : Attr("table") ?? Attr("baseType") ?? Attr("typeKind") ?? Attr("provider");
     var tipTitle = isFolder ? label : DbObjectIcons.Title(node.Type, Model.Kind);
+    var icon = DbObjectIcons.For(Model.AsDatabase ? DbObjectType.Database : node.Type, Model.Kind);
 
     // Кнопка «показать DDL»: только у настоящих объектов схемы (не у папок-категорий,
     // схем, баз и колонок) и только для типов, DDL которых умеет строить генератор.
@@ -146,7 +147,7 @@
               hx-swap="beforeend"
               hx-include="#nav-hide-system"
               title="@tipTitle@(node.Comment is not null ? " — " + node.Comment : "")">
-            <span class="tree-toggle">&#9656;</span><span class="tree-icon">@DbObjectIcons.For(node.Type, Model.Kind)</span>
+            <span class="tree-toggle">&#9656;</span><span class="tree-icon">@icon</span>
             <span class="tree-name">@label</span>
             @if (suffix is not null)
             {
@@ -158,7 +159,7 @@
     else
     {
         <span class="tree-label" title="@tipTitle@(node.Comment is not null ? " — " + node.Comment : "")">
-            <span class="tree-toggle"></span><span class="tree-icon">@DbObjectIcons.For(node.Type, Model.Kind)</span>
+            <span class="tree-toggle"></span><span class="tree-icon">@icon</span>
             @if (dataUrl is not null)
             {
                 <a href="@dataUrl" class="tree-name" title="Открыть данные во вкладке (Ctrl+клик — отдельной страницей)"

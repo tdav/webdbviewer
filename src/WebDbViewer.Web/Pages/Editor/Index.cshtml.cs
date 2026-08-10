@@ -234,20 +234,22 @@ public sealed class EditorIndexModel : PageModel
     }
 
     /// <summary>
-    /// Вкладка с данными таблицы (hx-get="/editor?handler=DataTab&amp;ds=…&amp;schema=…&amp;table=…").
-    /// Тот же грид, что и на странице /data: содержимое читает grid.js по data-атрибутам,
-    /// поэтому здесь только разметка панели.
+    /// Открытие данных таблицы (hx-get="/editor?handler=DataTab&amp;ds=…&amp;schema=…&amp;table=…").
+    /// Отдаёт обычную вкладку редактора с готовым SELECT и признаком автозапуска:
+    /// строки показывает панель результатов, как у любого другого запроса.
     /// </summary>
     public async Task<IActionResult> OnGetDataTabAsync(
-        int index, Guid ds, string? schema, string? table, string? db, CancellationToken ct)
+        int index, Guid ds, string? schema, string? table, string? db,
+        [FromServices] IDbProviderRegistry providers,
+        CancellationToken ct)
     {
+        DataSources = await _store.GetAllAsync(ct);
         if (index < 1)
             index = 1;
 
         var config = await _store.GetAsync(ds, ct);
         if (config is null || string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(table))
         {
-            DataSources = await _store.GetAllAsync(ct);
             return Partial("_EditorTab", new EditorTabVm
             {
                 Index = index,
@@ -256,18 +258,18 @@ public sealed class EditorIndexModel : PageModel
             });
         }
 
+        var quote = providers.Get(config.Kind).QuoteIdentifier;
         var database = string.IsNullOrWhiteSpace(db) ? config.Database : db;
-        return Partial("_DataTab", new DataTabVm
+        return Partial("_EditorTab", new EditorTabVm
         {
             Index = index,
-            DsId = ds,
-            Schema = schema,
-            Table = table,
+            Title = $"{schema}.{table}",
+            DefaultDsId = ds,
+            DefaultDialect = config.Kind.ToString().ToLowerInvariant(),
+            // Без предела строк: стрим результатов обрезает выдачу сам и сообщает об этом.
+            Content = $"SELECT * FROM {quote(schema)}.{quote(table)}",
             Database = database,
-            IsOtherDatabase = !string.Equals(database, config.Database, StringComparison.Ordinal),
-            DataSourceName = config.Name,
-            IsProduction = config.IsProduction,
-            IsReadOnly = config.ReadOnly,
+            AutoRun = true,
         });
     }
 
@@ -349,27 +351,14 @@ public sealed record EditorTabVm
     /// <summary>Начальный текст редактора (например, DDL объекта); null — пустая вкладка.</summary>
     public string? Content { get; init; }
 
-    public string TabId => $"tab-{Index}";
-}
+    /// <summary>
+    /// База данных, в которой выполнять запрос вкладки; null — база, выбранная в тулбаре.
+    /// Нужна открытию данных таблицы: объект может лежать в базе, отличной от текущей.
+    /// </summary>
+    public string? Database { get; init; }
 
-/// <summary>Модель вкладки с данными таблицы для partial _DataTab.</summary>
-public sealed record DataTabVm
-{
-    public required int Index { get; init; }
-    public required Guid DsId { get; init; }
-    public required string Schema { get; init; }
-    public required string Table { get; init; }
-
-    /// <summary>База данных объекта: из параметра db либо база датасорса.</summary>
-    public required string Database { get; init; }
-
-    /// <summary>true — объект в базе, отличной от базы подключения (навигатор по всем базам).</summary>
-    public bool IsOtherDatabase { get; init; }
-
-    public string DataSourceName { get; init; } = "";
-    public bool IsProduction { get; init; }
-    public bool IsReadOnly { get; init; }
+    /// <summary>true — выполнить содержимое сразу после открытия вкладки (открытие данных таблицы).</summary>
+    public bool AutoRun { get; init; }
 
     public string TabId => $"tab-{Index}";
-    public string Title => $"{Schema}.{Table}";
 }

@@ -278,10 +278,56 @@ function initHorizontalSplitter() {
   const splitter = document.getElementById('splitter-h');
   const container = splitter && splitter.closest('.editor-and-results');
   if (!container) return;
+  const panel = container.querySelector('.results-panel');
 
-  const apply = (height) => applyResultsHeight(container, splitter, height);
-  const saved = readLayout().resultsHeight;
-  apply(typeof saved === 'number' ? saved : currentResultsHeight(container));
+  // Сворачивание панели результатов: трек отдаётся содержимому (остаётся полоса
+  // вкладок), высота до сворачивания запоминается, чтобы разворот вернул её.
+  // Любое перетаскивание разделителя разворачивает панель — иначе тянуть свёрнутую
+  // панель можно было бы бесконечно, а на экране бы ничего не менялось.
+  const isCollapsed = () => !!panel && panel.classList.contains('collapsed');
+  const apply = (height) => {
+    if (panel) panel.classList.remove('collapsed');
+    syncToggle();
+    return applyResultsHeight(container, splitter, height);
+  };
+
+  function syncToggle() {
+    const btn = container.querySelector('[data-action="results-toggle"]');
+    if (!btn) return;
+    const collapsed = isCollapsed();
+    btn.setAttribute('aria-expanded', String(!collapsed));
+    // Подпись у кнопки видимая, поэтому она же — доступное имя: правим текст, а не aria-label.
+    const label = btn.querySelector('[data-toggle-label]');
+    if (label) label.textContent = collapsed ? 'Развернуть' : 'Свернуть';
+  }
+
+  function collapse() {
+    if (!panel || isCollapsed()) return;
+    writeLayout({ resultsHeight: currentResultsHeight(container), resultsCollapsed: true });
+    panel.classList.add('collapsed');
+    container.style.gridTemplateRows =
+      `minmax(${MIN_EDITOR_HEIGHT}px, 1fr) ${splitterSize(splitter)}px auto`;
+    syncToggle();
+  }
+
+  function expand() {
+    if (!panel || !isCollapsed()) return;
+    const saved = readLayout().resultsHeight;
+    writeLayout({
+      resultsHeight: apply(typeof saved === 'number' ? saved : container.clientHeight * DEFAULT_RESULTS_FRACTION),
+      resultsCollapsed: false,
+    });
+  }
+
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('[data-action="results-toggle"]');
+    if (!btn) return;
+    if (isCollapsed()) expand(); else collapse();
+  });
+
+  const layout = readLayout();
+  apply(typeof layout.resultsHeight === 'number' ? layout.resultsHeight : currentResultsHeight(container));
+  if (layout.resultsCollapsed) collapse();
 
   makeDraggable(
     splitter,
@@ -296,7 +342,11 @@ function initHorizontalSplitter() {
     })
   );
 
-  window.addEventListener('resize', () => apply(currentResultsHeight(container)));
+  // Пересчёт ограничений при изменении окна. Свёрнутую панель он не трогает:
+  // apply() разворачивает её, и панель раскрывалась бы сама от смены размера окна.
+  window.addEventListener('resize', () => {
+    if (!isCollapsed()) apply(currentResultsHeight(container));
+  });
 }
 
 function init() {

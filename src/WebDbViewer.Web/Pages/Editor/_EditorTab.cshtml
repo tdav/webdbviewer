@@ -12,6 +12,10 @@
               data-ds-id="@(Model.DefaultDsId?.ToString() ?? "")"
               data-dialect="@(Model.DefaultDialect ?? "postgres")"
               data-grid-target="#results-grid"
+              @* data-autorun — вкладка открыта кликом «Открыть данные»: editor.js выполняет
+                 её содержимое сразу, предварительно переключив базу на data-database. *@
+              data-autorun="@(Model.AutoRun ? "1" : null)"
+              data-database="@Model.Database"
               placeholder="-- Введите SQL-запрос…&#10;-- Ctrl+Enter — выполнить, Alt+X — выполнить скрипт">@Model.Content</textarea>
 </div>
 @* Кнопка вкладки. Обёртка обязательна: при hx-swap-oob со стратегией «beforeend:»

@@ -154,4 +154,8 @@ public static class UiIcons
     /// <summary>Строка с крестом — пометить выделенные строки на удаление.</summary>
     public static readonly HtmlString RowDelete =
         Stroke("<path d='M2.4 4.6h11.2M2.4 8h6.2M2.4 11.4h4.4'/><path d='M9.8 10 14 14.2M14 10l-4.2 4.2'/>");
+
+    /// <summary>Шеврон вниз — свернуть панель. Развёрнутое состояние разворачивает иконку через CSS.</summary>
+    public static readonly HtmlString ChevronDown =
+        Stroke("<path d='M3.6 6 8 10.4 12.4 6'/>");
 }

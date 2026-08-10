@@ -42,7 +42,7 @@ public sealed class TreeModel : PageModel
             var config = await _store.GetAsync(ds, ct);
             if (config is null)
             {
-                ErrorMessage = "Датасорс не найден.";
+                ErrorMessage = "DataSource не найден.";
                 return;
             }
 
@@ -63,7 +63,9 @@ public sealed class TreeModel : PageModel
             if (withDatabaseLevel && segments.Count == 0)
             {
                 var databases = await provider.GetDatabasesAsync(connection, includeSystem: !hideSystem, ct);
-                Nodes = ToNodes(ds, path, databases, readOnly: config.ReadOnly, kind: config.Kind);
+                // Без kind: логотип СУБД несёт только корень датасорса, вложенные
+                // базы одного и того же сервера получают обычный цилиндр.
+                Nodes = ToNodes(ds, path, databases, readOnly: config.ReadOnly);
                 return;
             }
 
@@ -79,7 +81,10 @@ public sealed class TreeModel : PageModel
             if (schemaPath.Count == 0)
                 children = SchemaScope.Filter(allowedSchemas, children);
 
-            Nodes = ToNodes(ds, path, children, database, config.ReadOnly);
+            // Без уровня баз (Oracle) схемы стоят сразу под датасорсом — рисуем их
+            // цилиндром, чтобы второй уровень дерева выглядел одинаково в обеих СУБД.
+            Nodes = ToNodes(ds, path, children, database, config.ReadOnly,
+                asDatabase: !withDatabaseLevel && schemaPath.Count == 0);
         }
         catch (Exception ex)
         {
@@ -127,7 +132,7 @@ public sealed class TreeModel : PageModel
     /// <summary>Преобразует объекты БД в модели узлов дерева (путь к детям = путь родителя + имя узла).</summary>
     private static IReadOnlyList<TreeNodeVm> ToNodes(
         Guid ds, string? parentPath, IReadOnlyList<DbObjectNode> nodes, string? database = null,
-        bool readOnly = false, DbKind? kind = null) =>
+        bool readOnly = false, bool asDatabase = false) =>
         nodes
             .Select(n => new TreeNodeVm
             {
@@ -135,7 +140,7 @@ public sealed class TreeModel : PageModel
                 Node = n,
                 Database = database,
                 ReadOnly = readOnly,
-                Kind = kind,
+                AsDatabase = asDatabase,
                 Path = AppendSegment(parentPath, n.Name)
             })
             .ToList();

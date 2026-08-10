@@ -26,6 +26,8 @@ const ICONS = {
   deleteRows: `<svg ${ICON_ATTRS}><path d="M2.4 4.6h11.2M2.4 8h6.2M2.4 11.4h4.4"/><path d="M9.8 10 14 14.2M14 10l-4.2 4.2"/></svg>`,
   confirm: `<svg ${ICON_ATTRS}><path d="M2.8 8.6 6.2 12l7-8"/></svg>`,
   close: `<svg ${ICON_ATTRS}><path d="M4 4l8 8M12 4l-8 8"/></svg>`,
+  generate: `<svg ${ICON_ATTRS}><path d="M13.4 3.4v3.4H10"/><path d="M12.7 6.6a5.2 5.2 0 1 0-.5 5.2"/></svg>`,
+  calendar: `<svg ${ICON_ATTRS}><rect x="2.4" y="3.6" width="11.2" height="10" rx="1.2"/><path d="M2.4 6.8h11.2M5.6 2.4v2.4M10.4 2.4v2.4"/></svg>`,
 };
 
 // --- Стили грида ---
@@ -121,12 +123,65 @@ const GRID_CSS = `
 .wdb-edit-panel{flex:none;display:flex;align-items:center;gap:8px;padding:4px 8px;border-top:1px solid var(--wdb-border);background:var(--wdb-head);font:13px var(--font-ui,system-ui,sans-serif)}
 .wdb-edit-panel button{font:12px var(--font-ui,system-ui,sans-serif);padding:3px 10px;cursor:pointer}
 .wdb-edit-panel button:disabled{opacity:.5;cursor:default}
-.wdb-popup-overlay{position:fixed;inset:0;background:rgba(10,10,14,.58);z-index:var(--z-modal,50);display:flex;align-items:center;justify-content:center}
-.wdb-popup{background:var(--wdb-bg);color:var(--wdb-fg);border:1px solid var(--border-strong,rgba(26,26,46,.22));border-radius:var(--radius-xl,12px);box-shadow:var(--shadow-overlay,0 8px 24px rgba(0,0,0,.45));width:560px;max-width:92vw;display:flex;flex-direction:column;font:13px var(--font-ui,system-ui,sans-serif)}
+/* Попап живёт в body, а не внутри .wdb-grid — токены --wdb-* там не видны,
+   и объявлять их приходится заново. Без этого var(--wdb-bg) не разрешается:
+   фон окна становится прозрачным, а рамки полей пропадают целиком. */
+.wdb-popup-overlay{
+  --wdb-bg:var(--bg-panel,#fff);
+  --wdb-fg:var(--text,#1a1a24);
+  --wdb-border:var(--border,rgba(26,26,46,.12));
+  --wdb-null:var(--text-muted,#606070);
+  --wdb-mono:var(--mono,ui-monospace,Consolas,monospace);
+  position:fixed;inset:0;background:rgba(10,10,14,.58);z-index:var(--z-modal,50);
+  display:flex;align-items:center;justify-content:center
+}
+.wdb-popup{background:var(--wdb-bg);color:var(--wdb-fg);border:1px solid var(--border-strong,rgba(26,26,46,.22));border-radius:var(--radius-xl,12px);box-shadow:var(--shadow-overlay,0 8px 24px rgba(0,0,0,.45));width:560px;max-width:92vw;max-height:88vh;display:flex;flex-direction:column;font:13px var(--font-ui,system-ui,sans-serif)}
 .wdb-popup-title{padding:8px 12px;font-weight:600;border-bottom:1px solid var(--wdb-border)}
 .wdb-popup textarea{margin:10px 12px 4px;min-height:180px;resize:vertical;font:13px var(--wdb-mono);background:var(--bg-well,#e9e9f1);color:var(--wdb-fg);border:1px solid var(--wdb-border);border-radius:var(--radius-md,6px);padding:6px 8px}
 .wdb-popup-footer{display:flex;align-items:center;gap:8px;padding:8px 12px}
 .wdb-popup-footer .spacer{margin-left:auto}
+/* Форма строки (вставка/правка результата запроса): имя — значение — NULL. */
+/* Колонки: имя — значение — помощник (UUID/календарь) — NULL. Помощник вынесен
+   в свою колонку: рядом с полем он читался бы как часть значения. */
+.wdb-popup-form{display:grid;grid-template-columns:minmax(110px,auto) minmax(0,1fr) auto auto;gap:6px 10px;align-items:center;margin:10px 12px 4px;max-height:56vh;overflow:auto}
+.wdb-popup-form .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wdb-popup-form .name .type{display:block;font-weight:400;font-size:11px;color:var(--wdb-null)}
+.wdb-popup-form input[type=text]{width:100%;box-sizing:border-box;font:13px var(--wdb-mono);padding:3px 6px;background:var(--bg-well,#e9e9f1);color:var(--wdb-fg);border:1px solid var(--wdb-border);border-radius:var(--radius-md,6px)}
+.wdb-popup-form input[type=text]:disabled{opacity:.55}
+.wdb-popup-form .helper{display:flex;align-items:center}
+
+/* Календарь с выбором времени. Живёт в body поверх модального окна, поэтому
+   берёт токены приложения напрямую — токены грида здесь не видны. */
+.wdb-dtp-backdrop{position:fixed;inset:0;z-index:calc(var(--z-modal,50) + 10)}
+.wdb-dtp{
+  position:fixed;display:flex;overflow:hidden;
+  background:var(--bg-panel,#fff);color:var(--text,#1a1a24);
+  border:1px solid var(--border-strong,rgba(26,26,46,.22));
+  border-radius:var(--radius-xl,12px);box-shadow:var(--shadow-overlay,0 8px 24px rgba(0,0,0,.45));
+  font:13px var(--font-ui,system-ui,sans-serif)
+}
+.wdb-dtp-cal{padding:10px 12px}
+.wdb-dtp-head{display:flex;align-items:center;gap:4px;margin-bottom:6px}
+.wdb-dtp-title{flex:1;text-align:center;font-weight:600}
+.wdb-dtp-nav{width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;color:var(--text-muted,#606070);border-radius:var(--radius-md,6px);cursor:pointer;font:15px/1 var(--font-ui,system-ui,sans-serif)}
+.wdb-dtp-nav:hover{background:var(--bg-hover,#e4e4ec);color:var(--text,#1a1a24)}
+.wdb-dtp-grid{display:grid;grid-template-columns:repeat(7,30px);gap:2px}
+.wdb-dtp-wd{height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted,#606070)}
+.wdb-dtp-day{height:28px;border:0;background:transparent;color:var(--text,#1a1a24);border-radius:var(--radius-md,6px);cursor:pointer;font:13px var(--font-ui,system-ui,sans-serif)}
+.wdb-dtp-day:hover{background:var(--bg-hover,#e4e4ec)}
+/* Дни соседних месяцев остаются кликабельными, но не спорят за внимание с текущим. */
+.wdb-dtp-day.out{color:var(--text-muted,#606070);opacity:.6}
+.wdb-dtp-day.today{box-shadow:inset 0 0 0 1px var(--border-strong,rgba(26,26,46,.22))}
+.wdb-dtp-day.sel{background:var(--accent,#ff6b2c);color:var(--accent-ink,#fff);font-weight:600}
+.wdb-dtp-foot{display:flex;margin-top:8px;padding-top:8px;border-top:1px solid var(--border,rgba(26,26,46,.12))}
+.wdb-dtp-link{border:0;background:transparent;color:var(--accent-text,#c25100);cursor:pointer;font:12px var(--font-ui,system-ui,sans-serif);padding:2px 6px;border-radius:var(--radius-md,6px)}
+.wdb-dtp-link:hover{background:var(--accent-soft,rgba(255,107,44,.12))}
+.wdb-dtp-times{width:92px;max-height:294px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:10px 8px;border-left:1px solid var(--border,rgba(26,26,46,.12));background:var(--bg-panel-alt,#f0f0f4)}
+.wdb-dtp-time{flex:none;padding:5px 0;border:0;border-radius:var(--radius-md,6px);background:var(--bg-well,#e9e9f1);color:var(--text,#1a1a24);cursor:pointer;font:12px var(--mono,ui-monospace,Consolas,monospace)}
+.wdb-dtp-time:hover{background:var(--bg-hover,#e4e4ec)}
+.wdb-dtp-time.sel{background:var(--accent,#ff6b2c);color:var(--accent-ink,#fff)}
+.wdb-popup-form .nullbox{display:flex;align-items:center;gap:3px;font-size:11px;white-space:nowrap;cursor:pointer;user-select:none}
+.wdb-popup-hint{padding:0 12px;font-size:11px;color:var(--wdb-null)}
 `;
 
 function injectCss() {
@@ -165,6 +220,225 @@ function buildSkeleton() {
   }
   box.appendChild(rows);
   return box;
+}
+
+// --- Помощники поля формы строки ---
+
+function helperButton(icon, tip) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn btn-sm btn-icon';
+  b.setAttribute('aria-label', tip);
+  b.setAttribute('data-tip', tip);
+  b.innerHTML = icon;
+  return b;
+}
+
+/// UUID v4. crypto.randomUUID есть только в защищённом контексте (https или
+/// localhost), а приложение разворачивают и по http — там остаётся getRandomValues.
+function newUuid() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; // версия 4
+  b[8] = (b[8] & 0x3f) | 0x80; // вариант RFC 4122
+  const hex = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+// --- Календарь с выбором времени ---
+
+const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const TIME_STEP_MINUTES = 30;
+
+function pad(value, length = 2) {
+  return String(value).padStart(length, '0');
+}
+
+/// Date → «2023-10-09 10:59:59.000» (без времени — «2023-10-09»).
+function formatDateTime(d, withTime) {
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  if (!withTime) return date;
+  return `${date} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+/// Разбор значения поля. null — текст не распознан: календарь откроется на сегодня.
+function parseDateTime(text) {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,3}))?)?/
+    .exec(String(text || '').trim());
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0),
+    +(m[7] || '0').padEnd(3, '0'));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function sameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/**
+ * Календарь с колонкой времени, привязанный к кнопке поля.
+ * Нативный datetime-local выглядит по-своему в каждом браузере и списка времени
+ * не даёт — поэтому свой, на токенах приложения.
+ * @param {HTMLElement} anchor кнопка, у которой раскрывается панель
+ * @param {string} currentText текущее значение поля
+ * @param {boolean} withTime показывать колонку времени
+ * @param {(value:string)=>void} onPick выбранное значение в формате поля
+ */
+function openDateTimePicker(anchor, currentText, withTime, onPick) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'wdb-dtp-backdrop';
+  const panel = document.createElement('div');
+  panel.className = 'wdb-dtp';
+  backdrop.appendChild(panel);
+
+  const today = new Date();
+  let sel = parseDateTime(currentText) || today;
+  let viewYear = sel.getFullYear();
+  let viewMonth = sel.getMonth();
+
+  const onKey = (e) => {
+    if (e.key !== 'Escape') return;
+    // Капчурим на документе: иначе Esc дошёл бы до формы строки и закрыл её тоже.
+    e.stopPropagation();
+    e.preventDefault();
+    close();
+  };
+  function close() {
+    backdrop.remove();
+    document.removeEventListener('keydown', onKey, true);
+    anchor.focus();
+  }
+  const apply = (date) => { onPick(formatDateTime(date, withTime)); close(); };
+
+  // --- Календарь ---
+  const cal = document.createElement('div');
+  cal.className = 'wdb-dtp-cal';
+
+  const head = document.createElement('div');
+  head.className = 'wdb-dtp-head';
+  const prev = document.createElement('button');
+  const next = document.createElement('button');
+  for (const [btn, label, step] of [[prev, 'Предыдущий месяц', -1], [next, 'Следующий месяц', 1]]) {
+    btn.type = 'button';
+    btn.className = 'wdb-dtp-nav';
+    btn.setAttribute('aria-label', label);
+    btn.textContent = step < 0 ? '‹' : '›';
+    btn.addEventListener('click', () => {
+      viewMonth += step;
+      if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+      else if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+      renderMonth();
+    });
+  }
+  const title = document.createElement('div');
+  title.className = 'wdb-dtp-title';
+  head.append(prev, title, next);
+
+  const grid = document.createElement('div');
+  grid.className = 'wdb-dtp-grid';
+
+  const foot = document.createElement('div');
+  foot.className = 'wdb-dtp-foot';
+  const nowBtn = document.createElement('button');
+  nowBtn.type = 'button';
+  nowBtn.className = 'wdb-dtp-link';
+  nowBtn.textContent = withTime ? 'Сейчас' : 'Сегодня';
+  nowBtn.addEventListener('click', () => apply(new Date()));
+  foot.appendChild(nowBtn);
+
+  cal.append(head, grid, foot);
+
+  function renderMonth() {
+    title.textContent = `${MONTHS[viewMonth]} ${viewYear}`;
+    grid.replaceChildren();
+    for (const wd of WEEKDAYS) {
+      const cell = document.createElement('div');
+      cell.className = 'wdb-dtp-wd';
+      cell.textContent = wd;
+      grid.appendChild(cell);
+    }
+    // Неделя начинается с понедельника: getDay() отдаёт воскресенье нулём.
+    const first = new Date(viewYear, viewMonth, 1);
+    const offset = (first.getDay() + 6) % 7;
+    for (let i = 0; i < 42; i++) {
+      const date = new Date(viewYear, viewMonth, i - offset + 1);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'wdb-dtp-day';
+      if (date.getMonth() !== viewMonth) btn.classList.add('out');
+      if (sameDay(date, today)) btn.classList.add('today');
+      if (sameDay(date, sel)) btn.classList.add('sel');
+      btn.textContent = String(date.getDate());
+      btn.addEventListener('click', () => {
+        // Время остаётся прежним: смена дня не должна сбрасывать секунды значения.
+        sel = new Date(date.getFullYear(), date.getMonth(), date.getDate(),
+          sel.getHours(), sel.getMinutes(), sel.getSeconds(), sel.getMilliseconds());
+        if (!withTime) { apply(sel); return; }
+        viewYear = sel.getFullYear();
+        viewMonth = sel.getMonth();
+        renderMonth();
+        markTime();
+      });
+      grid.appendChild(btn);
+    }
+  }
+
+  // --- Колонка времени ---
+  let times = null;
+  const timeButtons = [];
+  if (withTime) {
+    times = document.createElement('div');
+    times.className = 'wdb-dtp-times';
+    for (let m = 0; m < 24 * 60; m += TIME_STEP_MINUTES) {
+      const h = Math.floor(m / 60);
+      const min = m % 60;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'wdb-dtp-time';
+      btn.textContent = `${pad(h)}:${pad(min)}`;
+      btn.dataset.minutes = String(m);
+      // Выбор времени — последнее действие: секунды и доли обнуляются, окно закрывается.
+      btn.addEventListener('click', () => apply(
+        new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), h, min, 0, 0)));
+      timeButtons.push(btn);
+      times.appendChild(btn);
+    }
+  }
+
+  function markTime() {
+    if (!times) return;
+    const current = sel.getHours() * 60 + sel.getMinutes();
+    for (const btn of timeButtons) btn.classList.toggle('sel', +btn.dataset.minutes === current);
+  }
+
+  renderMonth();
+  markTime();
+  panel.appendChild(cal);
+  if (times) panel.appendChild(times);
+  document.body.appendChild(backdrop);
+
+  // Прокрутка списка к выбранному времени — своя, а не scrollIntoView:
+  // тот дёргает и внешние прокручиваемые контейнеры.
+  if (times) {
+    const active = timeButtons.find((b) => b.classList.contains('sel'))
+      || timeButtons[Math.floor(sel.getHours() * 60 / TIME_STEP_MINUTES / 60)];
+    if (active) times.scrollTop = active.offsetTop - times.clientHeight / 2 + active.offsetHeight / 2;
+  }
+
+  // Раскрытие от кнопки: вниз, а если места нет — вверх; по краям окна прижимаем.
+  const rect = anchor.getBoundingClientRect();
+  const width = panel.offsetWidth;
+  const height = panel.offsetHeight;
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+  let top = rect.bottom + 4;
+  if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 4);
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+
+  backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', onKey, true);
 }
 
 function toast(message, type) {
@@ -273,6 +547,7 @@ class VirtualGrid {
     this.insertTouched.clear();
     this.deleteRows.clear();
     if (this.editPanel) this.updateEditPanel();
+    this.updateRowToolbar();
     this.header.innerHTML = '';
     this.canvas.innerHTML = '';
     this.spacer.style.height = '0px';
@@ -423,23 +698,36 @@ class VirtualGrid {
     }
     this.viewport.focus();
     this.scheduleRender();
+    // «Изменить»/«Удалить» работают по выделению — их доступность меняется вместе с ним.
+    this.updateRowToolbar();
+  }
+
+  /// Результат запроса выделяется строками целиком: правка и удаление работают
+  /// по записи, и блок из нескольких ячеек показывал бы охват, которого у операции
+  /// нет. На странице данных выделение остаётся поячеечным — там по нему работает
+  /// inline-редактор, и видно, какую ячейку откроет Enter.
+  get rowSelection() {
+    return this.mode === 'query';
   }
 
   isSelected(r, c) {
     if (!this.selAnchor || !this.selFocus) return false;
     const r1 = Math.min(this.selAnchor.r, this.selFocus.r);
     const r2 = Math.max(this.selAnchor.r, this.selFocus.r);
+    if (r < r1 || r > r2) return false;
+    if (this.rowSelection) return true;
     const c1 = Math.min(this.selAnchor.c, this.selFocus.c);
     const c2 = Math.max(this.selAnchor.c, this.selFocus.c);
-    return r >= r1 && r <= r2 && c >= c1 && c <= c2;
+    return c >= c1 && c <= c2;
   }
 
   copySelection() {
     if (!this.selAnchor || !this.selFocus) return;
     const r1 = Math.min(this.selAnchor.r, this.selFocus.r);
     const r2 = Math.max(this.selAnchor.r, this.selFocus.r);
-    const c1 = Math.min(this.selAnchor.c, this.selFocus.c);
-    const c2 = Math.max(this.selAnchor.c, this.selFocus.c);
+    // Копируется ровно то, что выделено: в режиме строк — все колонки записи.
+    const c1 = this.rowSelection ? 0 : Math.min(this.selAnchor.c, this.selFocus.c);
+    const c2 = this.rowSelection ? this.columns.length - 1 : Math.max(this.selAnchor.c, this.selFocus.c);
     const lines = [];
     for (let r = r1; r <= r2; r++) {
       const vals = [];
@@ -464,9 +752,10 @@ class VirtualGrid {
 
   // ---------------- Режим query: SSE-стрим результатов ----------------
 
-  connectStream(executionId) {
+  connectStream(executionId, source) {
     this.closeStream();
     this.reset();
+    this.setQuerySource(source);
     this.currentExecutionId = executionId;
     this.setStatus('Выполняется…');
     // До первой строки показывать нечего: место результата держит скелет.
@@ -1032,6 +1321,343 @@ class VirtualGrid {
       this.updateEditPanel();
     }
   }
+
+  // ---------------- Правка строк результата запроса (режим query) ----------------
+  // Пакета изменений здесь нет: в панели результатов нет кнопки «Сохранить», и
+  // накопленные правки было бы негде показать. Каждое окно применяется сразу.
+
+  /// Таблица, из которой пришли строки текущего результата (editor.js разобрал SQL).
+  /// null — запрос сложнее простого SELECT: правка недоступна.
+  setQuerySource(source) {
+    this.tableMeta = null;
+    const d = this.el.dataset;
+    if (source && source.table && source.schema) {
+      d.dsId = source.dsId;
+      d.schema = source.schema;
+      d.table = source.table;
+      if (source.db) d.database = source.db; else delete d.database;
+      // Диалект нужен форме строки: тип «date» в разных СУБД означает разное.
+      if (source.dialect) d.dialect = source.dialect; else delete d.dialect;
+      // Метаданные подтягиваются заранее: к моменту клика по кнопке они уже есть.
+      this.loadTableMeta().then(() => this.updateRowToolbar());
+    } else {
+      delete d.schema;
+      delete d.table;
+    }
+    this.updateRowToolbar();
+  }
+
+  /// Кнопки правки в полосе вкладок панели результатов (Pages/Editor/Index.cshtml).
+  rowActionButtons() {
+    const host = this.el.closest('.results-panel');
+    return host ? host.querySelectorAll('[data-row-action]') : [];
+  }
+
+  canEditRows() {
+    return this.mode === 'query' && !!this.tableMeta && !this.tableMeta.readOnly && !this.saving;
+  }
+
+  updateRowToolbar() {
+    const canEdit = this.canEditRows();
+    const hasRow = !!this.selAnchor && !!this.selFocus;
+    for (const btn of this.rowActionButtons()) {
+      // aria-disabled, а не disabled: кнопка иконочная и обязана оставаться
+      // наводимой, иначе её назначение узнать неоткуда (как в тулбаре редактора).
+      const needsRow = btn.dataset.rowAction !== 'insert';
+      btn.setAttribute('aria-disabled', String(!canEdit || (needsRow && !hasRow)));
+    }
+  }
+
+  /// Ключевые колонки, которыми можно адресовать строку выборки. Псевдоколонка
+  /// (ctid/__ROWID) в результат запроса не попадает, поэтому таблица без первичного
+  /// ключа отсюда неправима — молча слать UPDATE/DELETE без WHERE недопустимо.
+  queryRowKeys() {
+    const keys = this.keyColumnNames();
+    if (!keys || !keys.length) return null;
+    return keys.every((name) => this.colIndexByName(name) >= 0) ? keys : null;
+  }
+
+  selectedRowRange() {
+    if (!this.selAnchor || !this.selFocus) return null;
+    const r1 = Math.min(this.selAnchor.r, this.selFocus.r);
+    const r2 = Math.max(this.selAnchor.r, this.selFocus.r);
+    return r2 < this.rows.length ? [r1, r2] : null;
+  }
+
+  /// Отправка правок результата запроса и перечитывание выборки.
+  async applyRowEdits(edits, okMessage) {
+    this.saving = true;
+    this.updateRowToolbar();
+    try {
+      const res = await fetch('/api/data/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dsId: this.el.dataset.dsId,
+          db: this.el.dataset.database || null,
+          edits,
+        }),
+      });
+      let d = null;
+      try { d = await res.json(); } catch (_) { /* не JSON */ }
+      if (!res.ok) {
+        toast((d && d.error) || `Ошибка сохранения (HTTP ${res.status}).`);
+        return false;
+      }
+      const failures = (d.results || []).filter((x) => !x.success);
+      if (failures.length) {
+        for (const f of failures.slice(0, 5)) toast(f.error);
+        if (failures.length > 5) toast(`…и ещё ошибок: ${failures.length - 5}.`);
+        if (d.rolledBack) toast('Все изменения отменены (откат транзакции).', 'info');
+        return false;
+      }
+      toast(okMessage, 'info');
+      if (d.inTransaction && !d.committed)
+        toast('Изменения применены в открытой транзакции — не забудьте выполнить COMMIT.', 'info');
+      // Перечитывание — повтор запроса вкладки: своего источника страниц у грида
+      // результатов нет. Запрос берётся из-под курсора, как по кнопке «Выполнить».
+      if (window.WebDbEditor && typeof window.WebDbEditor.runActive === 'function')
+        window.WebDbEditor.runActive(false);
+      return true;
+    } catch (_) {
+      toast('Сеть недоступна — изменения не сохранены.');
+      return false;
+    } finally {
+      this.saving = false;
+      this.updateRowToolbar();
+    }
+  }
+
+  /// Кнопка «Удалить строки»: удаление сразу после подтверждения.
+  deleteSelectedQueryRows() {
+    if (!this.canEditRows()) return;
+    const keys = this.queryRowKeys();
+    if (!keys) {
+      toast('В выборке нет первичного ключа таблицы — адресовать строку нечем.');
+      return;
+    }
+    const range = this.selectedRowRange();
+    if (!range) { toast('Сначала выделите строки, которые нужно удалить.', 'info'); return; }
+    const [r1, r2] = range;
+    const count = r2 - r1 + 1;
+    if (!window.confirm(`Удалить строк: ${count}? Данные будут удалены из таблицы «${this.el.dataset.schema}.${this.el.dataset.table}».`))
+      return;
+    const edits = [];
+    for (let r = r1; r <= r2; r++) {
+      edits.push({
+        schema: this.el.dataset.schema,
+        table: this.el.dataset.table,
+        kind: 'delete',
+        keyValues: this.rowKeyValues(r, keys),
+        changedValues: null,
+      });
+    }
+    this.applyRowEdits(edits, `Удалено строк: ${count}.`);
+  }
+
+  /// Значение из инлайн-помощника: снимает NULL, если он стоял, и помечает поле
+  /// заполненным — иначе при вставке колонка ушла бы со значением по умолчанию.
+  setFieldValue(field, value) {
+    if (field.nullBox && field.nullBox.checked) {
+      field.nullBox.checked = false;
+      field.input.disabled = false;
+    }
+    field.input.value = value;
+    field.touched = true;
+    field.input.focus();
+  }
+
+  /// Кнопки-помощники поля по типу колонки: UUID генерируется, дата и время
+  /// выбираются системным календарём (<input type=datetime-local>) — свой
+  /// календарь ради этого не нужен.
+  fieldHelpers(field) {
+    const type = String(field.type || '').toLowerCase();
+
+    if (/^uuid\b/.test(type)) {
+      const btn = helperButton(ICONS.generate, 'Сгенерировать UUID');
+      btn.addEventListener('click', () => this.setFieldValue(field, newUuid()));
+      return [btn];
+    }
+
+    if (/timestamp|datetime|^date\b/.test(type)) {
+      // В PostgreSQL date хранит только дату, в Oracle DATE — дату со временем.
+      const dateOnly = this.el.dataset.dialect === 'postgres' && /^date$/.test(type);
+      const tip = dateOnly ? 'Выбрать дату' : 'Выбрать дату и время';
+      const btn = helperButton(ICONS.calendar, tip);
+      btn.addEventListener('click', () => openDateTimePicker(
+        btn, field.input.value, !dateOnly, (value) => this.setFieldValue(field, value)));
+      return [btn];
+    }
+
+    return [];
+  }
+
+  /// Модальное окно строки: kind = 'insert' (пустая форма) | 'update' (выделенная строка).
+  openRowForm(kind) {
+    if (!this.canEditRows()) return;
+    const meta = this.tableMeta;
+    const isUpdate = kind === 'update';
+
+    let rowIndex = -1;
+    let keys = null;
+    if (isUpdate) {
+      keys = this.queryRowKeys();
+      if (!keys) { toast('В выборке нет первичного ключа таблицы — адресовать строку нечем.'); return; }
+      const range = this.selectedRowRange();
+      if (!range) { toast('Сначала выделите строку, которую нужно изменить.', 'info'); return; }
+      rowIndex = range[0];
+    }
+
+    // Правим то, что видно: при UPDATE — колонки выборки, при INSERT — все колонки
+    // таблицы (незаполненные получат значение по умолчанию).
+    const fields = [];
+    if (isUpdate) {
+      this.columns.forEach((col, c) => {
+        const colMeta = meta.columns.find((x) => x.name === col.name);
+        if (!colMeta) return;                                   // выражение (count(*), a+b) — не колонка таблицы
+        if (colMeta.isGenerated) return;
+        if (meta.rowAddressColumn && col.name === meta.rowAddressColumn) return;
+        fields.push({ name: col.name, type: col.dataType || colMeta.dataType, colMeta, value: this.rows[rowIndex][c] });
+      });
+    } else {
+      meta.columns.forEach((colMeta) => {
+        if (colMeta.isGenerated) return;
+        fields.push({ name: colMeta.name, type: colMeta.dataType, colMeta, value: null });
+      });
+    }
+    if (!fields.length) { toast('В таблице нет колонок, доступных для правки.'); return; }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'wdb-popup-overlay';
+    const popup = document.createElement('div');
+    popup.className = 'wdb-popup';
+
+    const title = document.createElement('div');
+    title.className = 'wdb-popup-title';
+    title.textContent = (isUpdate ? 'Изменение строки — ' : 'Новая строка — ')
+      + `${this.el.dataset.schema}.${this.el.dataset.table}`;
+
+    const form = document.createElement('div');
+    form.className = 'wdb-popup-form';
+    for (const f of fields) {
+      const label = document.createElement('label');
+      label.className = 'name';
+      label.textContent = f.name;
+      if (f.type) {
+        const type = document.createElement('span');
+        type.className = 'type';
+        type.textContent = f.type;
+        label.appendChild(type);
+      }
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = f.value === null || f.value === undefined ? '' : String(f.value);
+      label.htmlFor = input.id = `wdb-field-${fields.indexOf(f)}`;
+
+      // Помощник поля (генератор UUID, календарь) — своя колонка, пустая у
+      // остальных типов: иначе поля разъезжались бы по ширине.
+      const helper = document.createElement('span');
+      helper.className = 'helper';
+
+      let nullBox = null;
+      let nullCell = document.createElement('span');
+      if (!f.colMeta || f.colMeta.isNullable) {
+        nullCell = document.createElement('label');
+        nullCell.className = 'nullbox';
+        nullCell.title = 'Записать NULL вместо значения';
+        nullBox = document.createElement('input');
+        nullBox.type = 'checkbox';
+        nullBox.checked = isUpdate && (f.value === null || f.value === undefined);
+        nullCell.append(nullBox, document.createTextNode('NULL'));
+        nullBox.addEventListener('change', () => {
+          f.touched = true;
+          input.disabled = nullBox.checked;
+          if (!nullBox.checked) input.focus();
+        });
+        input.disabled = nullBox.checked;
+      }
+      form.append(label, input, helper, nullCell);
+
+      input.addEventListener('input', () => { f.touched = true; });
+      f.input = input;
+      f.nullBox = nullBox;
+      for (const node of this.fieldHelpers(f)) helper.appendChild(node);
+    }
+
+    const hint = document.createElement('div');
+    hint.className = 'wdb-popup-hint';
+    hint.textContent = isUpdate
+      ? 'Отправляются только изменённые колонки.'
+      : 'Незаполненные колонки получат значение по умолчанию.';
+
+    const footer = document.createElement('div');
+    footer.className = 'wdb-popup-footer';
+    const spacer = document.createElement('span');
+    spacer.className = 'spacer';
+    // Кнопки прижаты вправо, primary — крайняя справа.
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn btn-icon';
+    cancelBtn.setAttribute('aria-label', 'Отмена');
+    cancelBtn.setAttribute('data-tip', 'Закрыть окно, ничего не меняя');
+    cancelBtn.innerHTML = ICONS.close;
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'btn btn-primary btn-icon';
+    okBtn.setAttribute('aria-label', isUpdate ? 'Сохранить изменения' : 'Вставить строку');
+    okBtn.setAttribute('data-tip', isUpdate ? 'Записать изменения строки в базу' : 'Вставить строку в таблицу');
+    okBtn.innerHTML = isUpdate ? ICONS.save : ICONS.confirm;
+    footer.append(spacer, cancelBtn, okBtn);
+
+    popup.append(title, form, hint, footer);
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
+
+    const close = () => { overlay.remove(); this.viewport.focus(); };
+
+    const submit = () => {
+      const changed = {};
+      for (const f of fields) {
+        const isNull = f.nullBox && f.nullBox.checked;
+        const next = isNull ? null : f.input.value;
+        if (isUpdate) {
+          const was = f.value === undefined ? null : f.value;
+          const same = next === null ? was === null : (was !== null && String(was) === next);
+          if (!same) changed[f.name] = next;
+        } else if (f.touched) {
+          changed[f.name] = next;
+        }
+      }
+      if (isUpdate && !Object.keys(changed).length) { toast('Строка не изменена.', 'info'); return; }
+
+      const edit = {
+        schema: this.el.dataset.schema,
+        table: this.el.dataset.table,
+        kind: isUpdate ? 'update' : 'insert',
+        keyValues: isUpdate ? this.rowKeyValues(rowIndex, keys) : null,
+        changedValues: changed,
+      };
+      okBtn.setAttribute('aria-disabled', 'true');
+      this.applyRowEdits([edit], isUpdate ? 'Строка изменена.' : 'Строка добавлена.').then((ok) => {
+        if (ok) close(); else okBtn.removeAttribute('aria-disabled');
+      });
+    };
+
+    okBtn.addEventListener('click', () => {
+      if (okBtn.getAttribute('aria-disabled') !== 'true') submit();
+    });
+    cancelBtn.addEventListener('click', close);
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+    overlay.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // Esc/Enter принадлежат окну, а не гриду под ним
+      if (e.key === 'Escape') { close(); e.preventDefault(); }
+      else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { submit(); e.preventDefault(); }
+    });
+
+    const first = fields.find((f) => !f.input.disabled);
+    if (first) { first.input.focus(); first.input.select(); } else cancelBtn.focus();
+  }
 }
 
 // ---------------- Инициализация и связка с редактором ----------------
@@ -1057,13 +1683,26 @@ document.addEventListener('htmx:afterSwap', (e) => initAll(e.target || document)
 
 // Запуск стрима результатов после /api/query/execute (событие из editor.js).
 document.addEventListener('webdb:execute', (e) => {
-  const { executionId, gridTarget } = e.detail || {};
+  const { executionId, gridTarget, source } = e.detail || {};
   if (!executionId) return;
   let el = gridTarget ? document.querySelector(gridTarget) : null;
   if (!el) el = document.querySelector('[data-result-grid]:not([data-mode="table"])');
   if (!el) el = document.querySelector('[data-result-grid]');
   if (!el) { toast('На странице нет грида результатов.'); return; }
-  initGrid(el).connectStream(executionId);
+  initGrid(el).connectStream(executionId, source);
+});
+
+// Кнопки правки строк в полосе вкладок панели результатов.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest ? e.target.closest('[data-row-action]') : null;
+  if (!btn || btn.getAttribute('aria-disabled') === 'true') return;
+  const host = btn.closest('.results-panel');
+  const el = host && host.querySelector('[data-result-grid]');
+  const grid = el && grids.get(el);
+  if (!grid) return;
+  e.preventDefault();
+  if (btn.dataset.rowAction === 'delete') grid.deleteSelectedQueryRows();
+  else grid.openRowForm(btn.dataset.rowAction);
 });
 
 window.WebDbGrid = { initAll, initGrid, get: (el) => grids.get(el) };

@@ -614,6 +614,9 @@ body.wdv-resizing-row, body.wdv-resizing-row * { cursor: row-resize !important; 
 /* Иконка типа объекта — нейтральная: в дереве ведёт имя, а не пиктограмма. */
 .tree-icon { flex: 0 0 auto; display: inline-flex; color: var(--text-muted); }
 .tree-icon .obj-icon { width: 14px; height: 14px; display: block; }
+/* Логотип СУБД — единственная растровая иконка дерева, ей нужен полный размер:
+   на 14px слон PostgreSQL и кольцо Oracle сливаются в пятно. */
+.tree-icon img.obj-icon { width: 13px; height: 16px; }
 .tree-open-data .ui-icon { width: 13px; height: 13px; }
 .tree-comment { color: var(--text-muted); font-size: 11px; margin-left: var(--space-xs); }
 .tree-empty { color: var(--text-muted); padding: var(--space-2xs) var(--space-md); }
@@ -818,16 +821,33 @@ a.tree-name:hover { color: var(--accent-text); }
     display: flex;
     flex-direction: column;
     min-height: 0;
+    /* min-width: 0 — без него grid-элемент раздувается по ширине сетки результатов
+       (auto minimum size), панель уезжает за край окна и горизонтальной прокрутки
+       внутри грида не возникает: колонки просто оказываются за экраном. */
+    min-width: 0;
     background: var(--bg-panel);
     border-top: 1px solid var(--border);
 }
 .results-tabs {
     display: flex;
+    align-items: center;
     gap: var(--space-3xs);
     padding: 0 var(--space-xs);
     border-bottom: 1px solid var(--border);
     flex: 0 0 auto;
 }
+/* Действия над строками результата и сворачивание панели — у правого края полосы вкладок. */
+.results-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3xs);
+}
+/* Свёрнутая панель: остаётся только полоса вкладок, высоту трека задаёт splitter.js. */
+.results-panel.collapsed .results-body,
+.results-panel.collapsed .results-status { display: none; }
+[data-action="results-toggle"] .ui-icon { transition: transform var(--motion-fast) ease; }
+.results-panel.collapsed [data-action="results-toggle"] .ui-icon { transform: rotate(180deg); }
 .results-body { flex: 1 1 auto; min-height: 0; overflow: hidden; }
 /* Грид результатов сам виртуализует прокрутку — внешний скролл ему только мешает. */
 .results-body > [data-result-grid] { height: 100%; }
