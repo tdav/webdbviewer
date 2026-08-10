@@ -73,7 +73,9 @@ export function makeAlias(table, taken) {
   let initials = '';
   let newSegment = true;
   for (const ch of table) {
-    if (ch === '_' || ch === '$' || ch === '#' || (ch >= '0' && ch <= '9')) {
+    // \p{Nd} — та же Unicode-категория (Decimal Digit Number), что распознаёт
+    // char.IsDigit в C#: не только ASCII 0-9, но и, например, арабо-индийские цифры.
+    if (ch === '_' || ch === '$' || ch === '#' || /\p{Nd}/u.test(ch)) {
       newSegment = true;
       continue;
     }

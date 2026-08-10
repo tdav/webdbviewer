@@ -382,6 +382,18 @@ document.addEventListener('click', async (e) => {
   if (!btn || btn.getAttribute('aria-disabled') === 'true') return;
   e.preventDefault();
 
+  // Кэш метаданных строится только для базы из настроек подключения (первичной) —
+  // тот же гейт, что уже блокирует автодополнение в editor.js. Проверяем через его
+  // публичный API, чтобы не заводить вторую копию правила «первичная база»: две
+  // копии одного условия и есть источник расхождений вроде этого дефекта.
+  if (window.WebDbEditor && typeof window.WebDbEditor.isPrimaryDatabaseSelected === 'function'
+      && !window.WebDbEditor.isPrimaryDatabaseSelected()) {
+    if (window.WebDb && typeof window.WebDb.toast === 'function') {
+      window.WebDb.toast('Обновлять нечего: для этой базы кэш метаданных не строится (кэш строится только для базы из настроек подключения).', 'warning');
+    }
+    return;
+  }
+
   const ds = document.querySelector('[data-role="datasource-select"]');
   const schemaSelect = document.querySelector('[data-role="schema-select"]');
   const dsId = ds && ds.value;

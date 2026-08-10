@@ -681,4 +681,6 @@ new MutationObserver(applyTheme).observe(document.documentElement, {
 });
 
 // Публичный API для других модулей/страниц.
-window.WebDbEditor = { initAll, initEditor, syncAll, applyTheme, runActive, cancelActive };
+// isPrimaryDatabaseSelected — тот же гейт, что блокирует автодополнение (см. выше),
+// отдаём наружу, чтобы app.js не заводил вторую копию правила «первичная база».
+window.WebDbEditor = { initAll, initEditor, syncAll, applyTheme, runActive, cancelActive, isPrimaryDatabaseSelected };
