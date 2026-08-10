@@ -9,6 +9,8 @@
 
 ## Диагностика текущего состояния
 
+> Диагностика ниже написана до чтения кода. Фактическое состояние — в разделе «Что реализовано» в конце файла.
+
 > **Важное ограничение прозрачности:** прямой доступ к `https://github.com/tdav/webdbviewer` из среды исследования оказался **невозможен** — GitHub, `raw.githubusercontent.com` и `api.github.com` блокируют автоматический доступ, а репозиторий не проиндексирован ни поисковиками, ни LLM-зеркалами (uithub/gitingest/deepwiki). Поэтому диагностика ниже построена на (а) заявленных пользователем фактах и (б) типовых антипаттернах SQL-автодополнения. **Фаза 0 плана — самостоятельно подтвердить эти пункты по коду** (репозиторий у вас есть локально; в air-gapped сети это делается напрямую).
 
 Заявлено пользователем: стек **ASP.NET Core (.NET 10) + HTMX**; гибрид **EF Core + Dapper**; текущая реализация Oracle «сильно перегружена»; автодополнение нужно в первую очередь для `SELECT` и прочих SQL-команд.
@@ -176,3 +178,53 @@ ORDER  BY a.attnum;
 - **Race conditions попапа** при быстром вводе (известные баги Monaco #2437/#2787) — обязательна отмена запросов (`AbortController`/`CancellationToken`).
 - **HybridCache tag-инвалидация в .NET 10 — experimental** (требует подавления `EXTEXP0018`); для базовой инвалидации по TTL и по ключу это не нужно.
 - **Air-gapped среда (Узбекистан, госсеть):** Monaco/CodeMirror и все npm-зависимости, шрифты, воркеры — только self-hosted, без внешних CDN. Проверить, что редактор и его web worker (Monaco) отдаются с вашего сервера.
+
+---
+
+## Что реализовано (2026-08-10)
+
+Этот раздел описывает фактическое состояние кода в ветке `feature/completion-client-cache` на момент написания. Все утверждения проверены по коду, а не по плану или спеке — ссылки на конкретные файлы приведены при каждом пункте.
+
+### Было закрыто до этой итерации
+
+К моменту начала работы над клиентским кэшем (база `95acc7e`) в кодовой базе уже был реализован полноценный серверный движок автодополнения — большая часть рекомендаций исследования выше на самом деле уже выполнена:
+
+- **Серверный ANTLR-движок** — `src/WebDbViewer.Completion/`: `GrammarAnalyzer.cs` (грамматика + antlr4-c3 `CodeCompletionCore`), `SemanticCompleter.cs` (семантика алиасов, CTE, подзапросов), `CompletionEngine.cs`.
+- **Кэш метаданных с single-flight и TTL** — `src/WebDbViewer.Metadata/MetadataCache.cs`: `Lazy` + CAS против одновременных промахов, stale-while-refresh, персистентный снапшот, поиск по trie.
+- **Oracle без `DBA_*`** — `src/WebDbViewer.Providers.Oracle/OracleProvider.cs` не содержит ни одного обращения к `DBA_*`-представлениям (проверено grep'ом по файлу); используются только `ALL_*` с фильтром по `:owner`.
+- **Отсутствие N+1 по колонкам** — интроспекция схемы идёт batch-запросами (объекты, комментарии таблиц, комментарии колонок, ограничения, колонки), а не по одному запросу на таблицу.
+- **Debounce и отмена устаревших запросов** — `frontend/src/editor.js:19`: `const COMPLETION_DEBOUNCE_MS = 250;`, плюс `AbortController` в `fetchCompletions` и немедленный путь для Ctrl+Space.
+- **Авто-alias при выборе таблицы** — `SemanticCompleter` (серверная часть) и, с этой итерации, его JS-порт `makeAlias` в `frontend/src/completion-schema.js`.
+- **FK-сниппеты** (`JOIN … ON` по внешним ключам, раскрытие `t.*`) — часть `SemanticCompleter`.
+- **Signature help** — `src/WebDbViewer.Completion/SignatureHelp.cs` + `POST /api/completion/signature` (`CompletionEndpoints.cs`).
+- **Frecency** — `src/WebDbViewer.Completion/RecentObjects.cs`, LRU на 20 таблиц на датасорс.
+
+Подробное сопоставление пунктов исследования с кодом — таблица в разделе 1 `docs/superpowers/specs/2026-08-10-sql-code-completion-design.md`.
+
+### Добавлено в этой итерации
+
+Предметом этой итерации был перенос фильтрации префикса на клиент (устранение round-trip'а на каждое нажатие клавиши — архитектура «Вариант B» из диагностики выше, которая всё ещё была в силе на момент начала работы). Коммиты: `95acc7e..bd3cc46` (ветка `feature/completion-client-cache`).
+
+- **Endpoint снапшота схемы** — `GET /api/completion/schema-map` в `src/WebDbViewer.Web/Api/CompletionEndpoints.cs` (`SchemaMapAsync`), заменил `POST /api/completion/warmup` (сам HTTP-endpoint удалён; метод `IMetadataCache.WarmupAsync` остался — используется в тестах и в `refresh`). DTO — `src/WebDbViewer.Web/Api/SchemaMapDto.cs`: короткие ключи JSON (`n`, `t`, `c`, `d`, `pk`, `nl`, `cm`), пропуск пустых комментариев, порог `partial` при `MaxTables = 2000` таблиц или `MaxColumns = 50000` колонок (при превышении колонки в ответе не отдаются). Кэширование через `ETag`/`If-None-Match`: `SchemaMapDto.ETagFor` строит ETag из `SchemaSnapshot.VersionHash`, при совпадении сервер отвечает `304` без тела.
+- **Клиентский модуль снапшота** — `frontend/src/completion-schema.js`, экспортируется как `window.WebDbCompletion` (`load`, `reset`, `localCompletions`, `stats`, `makeAlias`). Хранит снапшот в `Map` по ключу `dsId/schema`, дедуплицирует параллельные загрузки, копирует серверные правила квотирования идентификаторов (`quote`) и построения алиасов (`makeAlias` — порт `SemanticCompleter.MakeAlias`).
+- **Двухфазный источник автодополнения** — `frontend/src/editor.js`, `makeCompletionSource`: фаза 1 отдаёт локальные варианты из снапшота мгновенно (без сети), параллельно с текущим debounce 250 мс уходит запрос на сервер; фаза 2 — когда серверный ответ приходит (сверка по ключу «позиция + текст»), вызывается `startCompletion(view)` и на повторном проходе источник возвращает объединённый список (серверные варианты первыми, локальные добавляются только те, чьих `label` там нет). Прежний вызов прогрева заменён на `loadSchemaMap` (три точки вызова: инициализация редактора, смена схемы, смена датасорса).
+- **Кнопка «Обновить метаданные» и endpoint инвалидации** — `POST /api/metadata/refresh` в новом `src/WebDbViewer.Web/Api/MetadataRefreshEndpoints.cs`: `IMetadataCache.InvalidateAsync` синхронно, затем фоновый `WarmupAsync` (ответ `202` сразу, не дожидаясь прогрева). Кнопка в тулбаре редактора (`data-action="refresh-metadata"`) сбрасывает и клиентский снапшот через `window.WebDbCompletion.reset`, и серверный кэш.
+- **`RESULT_CACHE` в словарных запросах Oracle** — `src/WebDbViewer.Providers.Oracle/OracleProvider.cs`, хинт `/*+ RESULT_CACHE */` добавлен в 5 запросов интроспекции схемы (объекты, комментарии таблиц, комментарии колонок, ограничения, колонки). Запросы к `v$version`, `v$instance`, `all_users`, `all_db_links`, а также `// 6. Внешние ключи` и `LoadRoutinesAsync` хинт не получили — при подготовке к этому разделу проверено, что первые не годятся под кэширование результата (переменные данные), а последние два — известный пробел этой итерации (см. `.superpowers/sdd/progress.md`, раздел «Minor-находки ревью»), не поведенческая регрессия.
+- **Замеры латентности** — сервер: `src/WebDbViewer.Metadata/MetadataCache.cs`, лог уровня `Debug` в `LoadCoreAsync` — `"Интроспекция схемы {Schema} датасорса {DataSourceId}: {ElapsedMs} мс, таблиц {Tables}"`. Клиент: `performance.now()` вокруг `localCompletions`, накопление в `window.WebDbCompletion.stats()` (`{count, p50, p95}`).
+
+### Что сознательно не делалось и почему
+
+Раздел 4 спеки (`docs/superpowers/specs/2026-08-10-sql-code-completion-design.md`) фиксирует эти решения явно:
+
+- **Отдельный lazy-endpoint колонок по одной таблице** — не вводился: при схемах до ~500 таблиц это лишний слой, весь снапшот (включая колонки) уходит на клиент целиком за один запрос `schema-map`.
+- **FK-связи в самом schema-map** — не добавлялись: FK-сниппеты формирует сервер (`SemanticCompleter`) и делает это уже сейчас; дублировать эту логику на клиенте незачем.
+- **Перенос семантики на клиент** (`schemaCompletionSource` из `@codemirror/lang-sql` вместо серверного ANTLR-движка) — отклонён: клиентский разбор контекста в `completion-schema.js` намеренно грубый (регулярные выражения на уровне текущего statement), точность на CTE и вложенных подзапросах остаётся только у серверного движка — отсюда и двухфазная схема, а не полная замена.
+- **LSP/WebSocket-протокол, AST-парсер на клиенте, JS-тест-раннер** — не вводились; клиентский код этой итерации проверяется вручную в браузере, а не unit-тестами (в проекте нет JS test runner'а, вводить его для одной итерации избыточно).
+- **`HybridCache` вместо существующего `MetadataCache`** — не менялось: `MetadataCache` уже даёт single-flight, TTL и stale-while-refresh; замена ради названия из исследования выше не имеет практического смысла.
+
+### Ссылки
+
+- Спека: `docs/superpowers/specs/2026-08-10-sql-code-completion-design.md`.
+- План: `docs/superpowers/plans/2026-08-10-sql-completion-client-cache.md`.
+- Ход выполнения и находки ревью батча 1: `.superpowers/sdd/progress.md`.
+- Каталог `docs/superpowers/reports/`, упомянутый в задании на документацию для отчётов батча 2 (замеры Oracle, браузерная проверка, ревью диффа), на момент написания этого раздела не существует — соответствующие проверки либо ещё не завершены, либо оформлены иначе; ссылки на несуществующие файлы намеренно не приводятся.
