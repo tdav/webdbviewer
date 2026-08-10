@@ -371,3 +371,40 @@ function unblockScreen() {
 }
 
 window.WebDb = { toast, toggleTheme, currentTheme, blockScreen, unblockScreen };
+
+// Обновление метаданных схемы: сбрасываем серверный кэш и клиентский снапшот,
+// затем грузим его заново. Делегирование на document — кнопка живёт в HTMX-фрагменте
+// тулбара и пересоздаётся при каждой смене датасорса или базы.
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest ? e.target.closest('[data-action="refresh-metadata"]') : null;
+  if (!btn) return;
+  e.preventDefault();
+
+  const ds = document.querySelector('[data-role="datasource-select"]');
+  const schemaSelect = document.querySelector('[data-role="schema-select"]');
+  const dsId = ds && ds.value;
+  const schema = schemaSelect && schemaSelect.value ? schemaSelect.value : null;
+  if (!dsId) return;
+
+  btn.setAttribute('aria-disabled', 'true');
+  try {
+    await fetch('/api/metadata/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dsId, schema }),
+    });
+    if (window.WebDbCompletion) {
+      window.WebDbCompletion.reset(dsId, schema);
+      await window.WebDbCompletion.load(dsId, schema);
+    }
+    if (window.WebDb && typeof window.WebDb.toast === 'function') {
+      window.WebDb.toast('Метаданные схемы обновляются', 'info');
+    }
+  } catch (_) {
+    if (window.WebDb && typeof window.WebDb.toast === 'function') {
+      window.WebDb.toast('Не удалось обновить метаданные', 'error');
+    }
+  } finally {
+    btn.removeAttribute('aria-disabled');
+  }
+});

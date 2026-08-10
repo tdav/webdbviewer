@@ -29,6 +29,9 @@
         <option value="@schema">@schema</option>
     }
 </select>
+<button type="button" class="btn btn-icon" data-action="refresh-metadata"
+        aria-label="Обновить метаданные схемы"
+        data-tip="Перечитать список таблиц и колонок схемы — после изменения структуры БД">@UiIcons.Refresh</button>
 @if (Model.ErrorMessage is not null)
 {
     <span class="cell-muted" title="@Model.ErrorMessage">— список недоступен —</span>

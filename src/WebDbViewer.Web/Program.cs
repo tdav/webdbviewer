@@ -203,6 +203,7 @@ try
 
     app.MapQueryApi();
     app.MapCompletionApi();
+    app.MapMetadataRefreshApi();
     app.MapAuditApi();
     app.MapDdlApi();
     app.MapDataEditApi();
