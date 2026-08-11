@@ -6,12 +6,16 @@
 @if (Model.Databases.Count > 0)
 {
     <label for="editor-database" style="margin:0">База</label>
+    @* hx-sync: тот же ключ, что у #editor-ds — без него быстрая смена базы вслед за
+       датасорсом не отменяет более ранний запрос, и его поздний ответ может затереть
+       тулбар устаревшим фрагментом. *@
     <select id="editor-database" name="db" data-role="database-select"
             hx-get="/editor?handler=Scope"
             hx-trigger="change"
             hx-include="#editor-ds, #editor-database"
             hx-target="#editor-scope"
-            hx-swap="innerHTML">
+            hx-swap="innerHTML"
+            hx-sync="#editor-scope:replace">
         @foreach (var db in Model.Databases)
         {
             <option value="@db" selected="@(db == Model.SelectedDatabase)">@db</option>

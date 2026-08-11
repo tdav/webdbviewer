@@ -117,11 +117,15 @@
                 <span class="sep"></span>
 
                 <label for="editor-ds" style="margin:0">Датасорс</label>
+                @* hx-sync: без него быстрая смена датасорса/базы подряд не сериализует запросы
+                   к общей цели #editor-scope — поздний ответ раннего запроса может прийти
+                   последним и затереть тулбар устаревшим фрагментом. *@
                 <select id="editor-ds" name="ds" data-role="datasource-select"
                         hx-get="/editor?handler=Scope"
                         hx-trigger="change"
                         hx-target="#editor-scope"
-                        hx-swap="innerHTML">
+                        hx-swap="innerHTML"
+                        hx-sync="#editor-scope:replace">
                     @foreach (var ds in Model.DataSources)
                     {
                         @* data-kind — диалект для CodeMirror при переключении датасорса *@
