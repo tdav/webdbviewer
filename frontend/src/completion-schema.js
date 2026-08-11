@@ -7,21 +7,22 @@ const cache = new Map();    // ключ -> { data, etag }
 const inflight = new Map(); // ключ -> Promise
 const timings = [];         // длительности localCompletions, мс
 
-const KEY = (dsId, schema) => (dsId || '') + '/' + (schema || '');
+const KEY = (dsId, db, schema) => (dsId || '') + '/' + (db || '') + '/' + (schema || '');
 
 // --- Загрузка ---
 
 // Возвращает true при успехе (в т.ч. 304 — кэш уже актуален) и false при неудаче
 // (204, сетевая ошибка, не-2xx) — вызывающая сторона (editor.js) решает по этому
 // флагу, можно ли считать ключ загруженным и не повторять попытку.
-export async function load(dsId, schema) {
+export async function load(dsId, db, schema) {
   if (!dsId) return false;
-  const key = KEY(dsId, schema);
+  const key = KEY(dsId, db, schema);
   if (inflight.has(key)) return inflight.get(key);
 
   const promise = (async () => {
     const url = '/api/completion/schema-map?dsId=' + encodeURIComponent(dsId)
-      + (schema ? '&schema=' + encodeURIComponent(schema) : '');
+      + (schema ? '&schema=' + encodeURIComponent(schema) : '')
+      + (db ? '&db=' + encodeURIComponent(db) : '');
     const headers = {};
     const known = cache.get(key);
     if (known && known.etag) headers['If-None-Match'] = known.etag;
@@ -43,8 +44,8 @@ export async function load(dsId, schema) {
   return promise;
 }
 
-export function reset(dsId, schema) {
-  cache.delete(KEY(dsId, schema));
+export function reset(dsId, db, schema) {
+  cache.delete(KEY(dsId, db, schema));
 }
 
 export function stats() {
@@ -109,8 +110,8 @@ const TABLE_CONTEXT = new Set(['from', 'join', 'into', 'update', 'table', 'later
 
 // --- Построение вариантов ---
 
-export function localCompletions({ text, pos, dsId, schema, dialect }) {
-  const entry = cache.get(KEY(dsId, schema));
+export function localCompletions({ text, pos, dsId, db, schema, dialect }) {
+  const entry = cache.get(KEY(dsId, db, schema));
   if (!entry) return null;
 
   const started = performance.now();

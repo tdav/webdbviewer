@@ -114,10 +114,8 @@ function makeCompletionSource(textarea) {
   let timer = null;
   let controller = null;
   let pendingResolve = null;
-  // Ответ сервера для конкретной каретки: ключ «датасорс|схема|позиция|текст» отсекает
-  // ответ, пришедший к уже изменившемуся запросу или к уже смененному датасорсу/схеме
-  // (см. isPrimaryDatabaseSelected — тот же класс проблемы: чужая база не должна
-  // подмешиваться в подсказки).
+  // Ответ сервера для конкретной каретки: ключ «датасорс|база|схема|позиция|текст» отсекает
+  // ответ, пришедший к уже изменившемуся запросу или к уже смененному датасорсу/базе/схеме.
   let serverAnswer = null;
 
   function dropPending() {
@@ -126,7 +124,7 @@ function makeCompletionSource(textarea) {
   }
 
   const answerKey = (context) =>
-    textarea.dataset.dsId + '|' + (currentSchema() || '') + '|' + context.pos + '|' + context.state.doc.toString();
+    textarea.dataset.dsId + '|' + (currentDatabase() || '') + '|' + (currentSchema() || '') + '|' + context.pos + '|' + context.state.doc.toString();
 
   async function fetchCompletions(context, word) {
     if (controller) controller.abort(); // отмена устаревшего запроса
@@ -140,6 +138,7 @@ function makeCompletionSource(textarea) {
           sql: context.state.doc.toString(),
           caretOffset: context.pos,
           defaultSchema: currentSchema(),
+          db: currentDatabase(),
         }),
         signal: controller.signal,
       });
@@ -179,6 +178,7 @@ function makeCompletionSource(textarea) {
       text: context.state.doc.toString(),
       pos: context.pos,
       dsId: textarea.dataset.dsId,
+      db: currentDatabase(),
       schema: currentSchema(),
       dialect: textarea.dataset.dialect,
     });
@@ -229,12 +229,6 @@ function makeCompletionSource(textarea) {
     const word = context.matchBefore(/[\w"$#]*/);
     if (!context.explicit && (!chain || chain.from === chain.to)) return null;
     if (!textarea.dataset.dsId) return null;
-    // Кэш метаданных строится только для базы из настроек подключения: в чужой базе
-    // подсказки объектов были бы из другой БД, а сервер ответил бы объектами первичной
-    // базы — поэтому запрос не шлём. Ключевые слова диалекта от базы не зависят,
-    // их предлагаем всегда, иначе в чужой базе автодополнение мертво целиком.
-    if (!isPrimaryDatabaseSelected())
-      return keywordSourceFor(textarea.dataset.dialect)(context);
 
     const key = answerKey(context);
     const local = localResult(context);
@@ -347,7 +341,7 @@ function makeSignatureListener(textarea) {
     const isCall = open >= 0 && /[\w"$#]\s*$/.test(before.slice(0, open));
 
     if (timer) clearTimeout(timer);
-    if (!isCall || !textarea.dataset.dsId || !isPrimaryDatabaseSelected()) {
+    if (!isCall || !textarea.dataset.dsId) {
       clear(view);
       return;
     }
@@ -364,6 +358,7 @@ function makeSignatureListener(textarea) {
             sql: view.state.doc.toString(),
             caretOffset: pos,
             defaultSchema: currentSchema(),
+            db: currentDatabase(),
           }),
           signal: controller.signal,
         });
@@ -383,15 +378,15 @@ function makeSignatureListener(textarea) {
 // а на клиенте он даёт мгновенные подсказки без сети.
 let lastSchemaLoad = null;
 
-function loadSchemaMap(dsId, schema) {
+function loadSchemaMap(dsId, db, schema) {
   if (!dsId) return;
-  const key = dsId + '/' + (schema || '');
-  if (key === lastSchemaLoad) return; // повторная загрузка той же схемы не нужна
+  const key = dsId + '/' + (db || '') + '/' + (schema || '');
+  if (key === lastSchemaLoad) return; // повторная загрузка той же базы/схемы не нужна
   // Ключ помечаем загруженным только после успеха: сбой сети или 204 (интроспекция
-  // не удалась) не должны блокировать локальный кэш до смены схемы/датасорса —
+  // не удалась) не должны блокировать локальный кэш до смены базы/схемы/датасорса —
   // следующий вызов должен получить шанс повторить попытку. Параллельные вызовы
   // с тем же ключом не дублируют запрос — дедупликация в completion-schema.js (inflight).
-  window.WebDbCompletion.load(dsId, schema).then((ok) => {
+  window.WebDbCompletion.load(dsId, db, schema).then((ok) => {
     if (ok) lastSchemaLoad = key;
   });
 }
@@ -406,13 +401,6 @@ function currentSchema() {
 function currentDatabase() {
   const select = document.querySelector('[data-role="database-select"]');
   return select && select.value ? select.value : null;
-}
-
-// --- Выбрана ли база из настроек подключения (для неё есть кэш метаданных) ---
-function isPrimaryDatabaseSelected() {
-  const select = document.querySelector('[data-role="database-select"]');
-  if (!select || !select.selectedOptions.length) return true; // селекта баз нет — база одна
-  return select.selectedOptions[0].dataset.primary === 'true';
 }
 
 // --- Выполнение SQL ---
@@ -578,7 +566,7 @@ function initEditor(textarea) {
   textarea.style.display = 'none';
   views.push({ view, textarea });
 
-  loadSchemaMap(textarea.dataset.dsId, currentSchema());
+  loadSchemaMap(textarea.dataset.dsId, currentDatabase(), currentSchema());
 
   // Перед submit формы — синхронизация значения в скрытый textarea.
   const form = textarea.closest('form');
@@ -698,10 +686,19 @@ document.addEventListener('change', (e) => {
   const select = e.target;
   if (!select || select.dataset === undefined) return;
 
-  // Смена схемы — тот же датасорс, но подсказки пойдут по другому набору объектов.
+  // Смена схемы — тот же датасорс и база, но подсказки пойдут по другому набору объектов.
   if (select.dataset.role === 'schema-select') {
     const editor = activeEditor();
-    if (editor) loadSchemaMap(editor.textarea.dataset.dsId, select.value || null);
+    if (editor) loadSchemaMap(editor.textarea.dataset.dsId, currentDatabase(), select.value || null);
+    return;
+  }
+
+  // Смена базы в тулбаре — та же логика, что и смена схемы: другой набор объектов.
+  // Схема после HTMX-свопа сбрасывается на «— по умолчанию —» (value=""), т.е. на null —
+  // именно этот ключ и спросит currentSchema() у уже перерисованного select[schema].
+  if (select.dataset.role === 'database-select') {
+    const editor = activeEditor();
+    if (editor) loadSchemaMap(editor.textarea.dataset.dsId, select.value || null, null);
     return;
   }
 
@@ -722,8 +719,8 @@ document.addEventListener('change', (e) => {
   // Ключ совпадёт с тем, что потом спросит currentSchema(): OnGetScopeAsync не
   // принимает schema, поэтому перерисованный select[schema] всегда сбрасывается
   // на «— по умолчанию —» (value=""), т.е. на тот же null — повторной загрузки
-  // после HTMX-свопа не нужно.
-  loadSchemaMap(select.value || '', null);
+  // после HTMX-свопа не нужно. База тоже сбрасывается вместе с тулбаром — null.
+  loadSchemaMap(select.value || '', null, null);
 });
 
 // Инициализация: при загрузке страницы и после HTMX-свопов.
@@ -740,6 +737,4 @@ new MutationObserver(applyTheme).observe(document.documentElement, {
 });
 
 // Публичный API для других модулей/страниц.
-// isPrimaryDatabaseSelected — тот же гейт, что блокирует автодополнение (см. выше),
-// отдаём наружу, чтобы app.js не заводил вторую копию правила «первичная база».
-window.WebDbEditor = { initAll, initEditor, syncAll, applyTheme, runActive, cancelActive, isPrimaryDatabaseSelected };
+window.WebDbEditor = { initAll, initEditor, syncAll, applyTheme, runActive, cancelActive };

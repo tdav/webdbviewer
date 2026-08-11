@@ -382,22 +382,12 @@ document.addEventListener('click', async (e) => {
   if (!btn || btn.getAttribute('aria-disabled') === 'true') return;
   e.preventDefault();
 
-  // Кэш метаданных строится только для базы из настроек подключения (первичной) —
-  // тот же гейт, что уже блокирует автодополнение в editor.js. Проверяем через его
-  // публичный API, чтобы не заводить вторую копию правила «первичная база»: две
-  // копии одного условия и есть источник расхождений вроде этого дефекта.
-  if (window.WebDbEditor && typeof window.WebDbEditor.isPrimaryDatabaseSelected === 'function'
-      && !window.WebDbEditor.isPrimaryDatabaseSelected()) {
-    if (window.WebDb && typeof window.WebDb.toast === 'function') {
-      window.WebDb.toast('Обновлять нечего: для этой базы кэш метаданных не строится (кэш строится только для базы из настроек подключения).', 'warning');
-    }
-    return;
-  }
-
   const ds = document.querySelector('[data-role="datasource-select"]');
   const schemaSelect = document.querySelector('[data-role="schema-select"]');
+  const dbSelect = document.querySelector('[data-role="database-select"]');
   const dsId = ds && ds.value;
   const schema = schemaSelect && schemaSelect.value ? schemaSelect.value : null;
+  const db = dbSelect && dbSelect.value ? dbSelect.value : null;
   if (!dsId) return;
 
   btn.setAttribute('aria-disabled', 'true');
@@ -405,7 +395,7 @@ document.addEventListener('click', async (e) => {
     const res = await fetch('/api/metadata/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dsId, schema }),
+      body: JSON.stringify({ dsId, schema, db }),
     });
     if (!res.ok) {
       // Сервер отказал (400 — не задан датасорс, 404 — датасорс не найден и т.п.):
@@ -416,8 +406,8 @@ document.addEventListener('click', async (e) => {
       return;
     }
     if (window.WebDbCompletion) {
-      window.WebDbCompletion.reset(dsId, schema);
-      await window.WebDbCompletion.load(dsId, schema);
+      window.WebDbCompletion.reset(dsId, db, schema);
+      await window.WebDbCompletion.load(dsId, db, schema);
     }
     if (window.WebDb && typeof window.WebDb.toast === 'function') {
       window.WebDb.toast('Метаданные схемы обновляются', 'info');
