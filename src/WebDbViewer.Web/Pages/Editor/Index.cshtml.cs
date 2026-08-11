@@ -312,7 +312,6 @@ public sealed class EditorIndexModel : PageModel
             {
                 Databases = databases,
                 SelectedDatabase = selectedDatabase,
-                ConnectionDatabase = config.Database,
                 Schemas = schemas
             });
         }
@@ -330,8 +329,6 @@ public sealed record EditorScopeVm
     /// <summary>Базы сервера; пустой список — уровень баз недоступен (Oracle либо подключение без права на все базы).</summary>
     public IReadOnlyList<string> Databases { get; init; } = [];
     public string? SelectedDatabase { get; init; }
-    /// <summary>База из настроек подключения — единственная, для которой строится кэш метаданных.</summary>
-    public string? ConnectionDatabase { get; init; }
     public IReadOnlyList<string> Schemas { get; init; } = [];
     public string? ErrorMessage { get; init; }
 }

@@ -5,7 +5,8 @@ namespace WebDbViewer.Web.Api;
 /// <summary>Тело запроса ручного обновления метаданных.</summary>
 /// <param name="DsId">Идентификатор датасорса.</param>
 /// <param name="Schema">Схема; null — схема по умолчанию для датасорса.</param>
-public sealed record MetadataRefreshRequest(Guid DsId, string? Schema = null);
+/// <param name="Db">Выбранная в тулбаре база сервера; null — база из настроек подключения.</param>
+public sealed record MetadataRefreshRequest(Guid DsId, string? Schema = null, string? Db = null);
 
 /// <summary>
 /// Ручное обновление кэша метаданных. Нужно после DDL: без него подсказки
@@ -41,7 +42,7 @@ public static class MetadataRefreshEndpoints
         if (string.IsNullOrWhiteSpace(schema))
             return Results.Accepted();
 
-        await metadata.InvalidateAsync(request.DsId, schema, ct);
+        await metadata.InvalidateAsync(request.DsId, request.Db, schema, ct);
 
         var logger = loggerFactory.CreateLogger(typeof(MetadataRefreshEndpoints));
         // Токен запроса не передаётся: прогрев переживает завершение HTTP-ответа.
@@ -49,7 +50,7 @@ public static class MetadataRefreshEndpoints
         {
             try
             {
-                await metadata.WarmupAsync(request.DsId, [schema], CancellationToken.None);
+                await metadata.WarmupAsync(request.DsId, request.Db, [schema], CancellationToken.None);
             }
             catch (Exception ex)
             {

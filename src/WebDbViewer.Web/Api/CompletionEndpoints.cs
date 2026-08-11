@@ -9,7 +9,8 @@ namespace WebDbViewer.Web.Api;
 /// <param name="Sql">Полный текст в редакторе.</param>
 /// <param name="CaretOffset">Позиция каретки (смещение в символах).</param>
 /// <param name="DefaultSchema">Текущая схема (по умолчанию public для PostgreSQL).</param>
-public sealed record CompletionApiRequest(Guid DsId, string Sql, int CaretOffset, string? DefaultSchema = null);
+/// <param name="Db">Выбранная в тулбаре база сервера; null — база из настроек подключения.</param>
+public sealed record CompletionApiRequest(Guid DsId, string Sql, int CaretOffset, string? DefaultSchema = null, string? Db = null);
 
 /// <summary>
 /// Endpoint автодополнения SQL.
@@ -59,6 +60,7 @@ public static class CompletionEndpoints
             SqlText = request.Sql,
             CaretOffset = request.CaretOffset,
             DefaultSchema = DefaultSchemaFor(config, request.DefaultSchema),
+            Database = request.Db,
         }, config.Kind, ct);
 
         loggerFactory.CreateLogger(typeof(CompletionEndpoints))
@@ -91,6 +93,7 @@ public static class CompletionEndpoints
             SqlText = request.Sql,
             CaretOffset = request.CaretOffset,
             DefaultSchema = DefaultSchemaFor(config, request.DefaultSchema),
+            Database = request.Db,
         }, config.Kind, ct);
 
         return signature is null ? Results.NoContent() : Results.Json(signature);
@@ -105,6 +108,7 @@ public static class CompletionEndpoints
     private static async Task<IResult> SchemaMapAsync(
         Guid dsId,
         string? schema,
+        string? db,
         HttpContext http,
         IDataSourceStore dataSourceStore,
         IMetadataCache metadata,
@@ -125,7 +129,7 @@ public static class CompletionEndpoints
         SchemaSnapshot snapshot;
         try
         {
-            snapshot = await metadata.GetSchemaAsync(dsId, schemaName, ct);
+            snapshot = await metadata.GetSchemaAsync(dsId, db, schemaName, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

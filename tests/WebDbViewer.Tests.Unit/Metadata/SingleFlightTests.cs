@@ -18,7 +18,7 @@ public class SingleFlightTests
 
         // 20 параллельных запросов зависают на воротах загрузчика
         var tasks = Enumerable.Range(0, 20)
-            .Select(_ => Task.Run(() => cache.GetSchemaAsync(ds, "public", CancellationToken.None)))
+            .Select(_ => Task.Run(() => cache.GetSchemaAsync(ds, null, "public", CancellationToken.None)))
             .ToArray();
 
         // Даём всем запросам дойти до ожидания
@@ -39,8 +39,8 @@ public class SingleFlightTests
         var cache = CreateCache(loader, new InMemorySnapshotStore());
 
         await Task.WhenAll(
-            cache.GetSchemaAsync(ds, "public", CancellationToken.None),
-            cache.GetSchemaAsync(ds, "audit", CancellationToken.None));
+            cache.GetSchemaAsync(ds, null, "public", CancellationToken.None),
+            cache.GetSchemaAsync(ds, null, "audit", CancellationToken.None));
 
         Assert.Equal(2, loader.LoadCount);
     }
@@ -52,9 +52,9 @@ public class SingleFlightTests
         var loader = new FakeLoader();
         var cache = CreateCache(loader, new InMemorySnapshotStore());
 
-        await cache.GetSchemaAsync(ds, "PUBLIC", CancellationToken.None);
-        await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
-        await cache.GetSchemaAsync(ds, "Public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "PUBLIC", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "Public", CancellationToken.None);
 
         Assert.Equal(1, loader.LoadCount); // ключи словаря — OrdinalIgnoreCase
     }
@@ -67,11 +67,11 @@ public class SingleFlightTests
         var cache = CreateCache(loader, new InMemorySnapshotStore());
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => cache.GetSchemaAsync(ds, "public", CancellationToken.None));
+            () => cache.GetSchemaAsync(ds, null, "public", CancellationToken.None));
 
         // Ошибка не кэшируется навсегда: следующий запрос загружает заново
         loader.Throw = null;
-        var snapshot = await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
+        var snapshot = await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
         Assert.Equal("public", snapshot.SchemaName);
         Assert.Equal(2, loader.LoadCount);
     }
@@ -82,13 +82,13 @@ public class SingleFlightTests
         var ds = Guid.NewGuid();
         var loader = new FakeLoader
         {
-            Factory = (_, schema) => schema == "broken"
+            Factory = (_, _, schema) => schema == "broken"
                 ? throw new InvalidOperationException("схема сломана")
                 : TestHelpers.Snapshot(schema, null, TestHelpers.Table(schema, "t"))
         };
         var cache = CreateCache(loader, new InMemorySnapshotStore());
 
-        await cache.WarmupAsync(ds, ["public", "broken", "audit"], CancellationToken.None);
+        await cache.WarmupAsync(ds, null, ["public", "broken", "audit"], CancellationToken.None);
 
         var loaded = await cache.GetLoadedSchemasAsync(ds, CancellationToken.None);
         Assert.Equal(2, loaded.Count);

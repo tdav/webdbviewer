@@ -49,6 +49,17 @@ public sealed class MetadataCache : IMetadataCache, IMetadataPersistence
         public readonly ConcurrentDictionary<string, SchemaSearchIndex> Indexes = new(StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Ключ скоупа кэша — база + схема. Разные базы одного датасорса кэшируются независимо,
+    /// иначе таблицы непервичной базы PostgreSQL перезаписывали бы снапшот первичной.
+    /// NUL-разделитель: в именах баз/схем не встречается.
+    /// </summary>
+    private static string ScopeKey(string? database, string schemaName) => (database ?? "") + '\0' + schemaName;
+
+    /// <summary>true — ключ скоупа принадлежит указанной базе (для инвалидации по префиксу).</summary>
+    private static bool ScopeMatchesDatabase(string scopeKey, string? database)
+        => scopeKey.StartsWith((database ?? "") + '\0', StringComparison.OrdinalIgnoreCase);
+
     private readonly ConcurrentDictionary<Guid, DatasourceCache> _caches = new();
     private readonly IMetadataLoader _loader;
     private readonly ISnapshotStore _store;
@@ -70,19 +81,20 @@ public sealed class MetadataCache : IMetadataCache, IMetadataPersistence
         _time = timeProvider ?? TimeProvider.System;
     }
 
-    public async Task<SchemaSnapshot> GetSchemaAsync(Guid dataSourceId, string schemaName, CancellationToken ct)
+    public async Task<SchemaSnapshot> GetSchemaAsync(Guid dataSourceId, string? database, string schemaName, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(schemaName);
         var ds = _caches.GetOrAdd(dataSourceId, _ => new DatasourceCache());
+        var scopeKey = ScopeKey(database, schemaName);
 
-        var entry = ds.Schemas.GetOrAdd(schemaName, s => new SchemaEntry(NewLoadLazy(dataSourceId, s, previous: null)));
+        var entry = ds.Schemas.GetOrAdd(scopeKey, _ => new SchemaEntry(NewLoadLazy(dataSourceId, database, schemaName, previous: null)));
         var lazy = entry.Lazy;
         var task = lazy.Value;
 
         // Предыдущая загрузка упала/отменена — одна повторная попытка (single-flight на новую задачу)
         if (task.IsFaulted || task.IsCanceled)
         {
-            var fresh = NewLoadLazy(dataSourceId, schemaName, previous: null);
+            var fresh = NewLoadLazy(dataSourceId, database, schemaName, previous: null);
             lazy = entry.TrySwap(lazy, fresh) ? fresh : entry.Lazy;
             task = lazy.Value;
         }
@@ -96,12 +108,12 @@ public sealed class MetadataCache : IMetadataCache, IMetadataPersistence
         if (_options.ServeStaleWhileRefresh || Volatile.Read(ref entry.RefreshInFlight) == 1)
         {
             // Отдаём устаревший, обновление — в фоне (или уже идёт)
-            TryStartBackgroundRefresh(dataSourceId, schemaName, entry, snapshot);
+            TryStartBackgroundRefresh(dataSourceId, database, schemaName, entry, snapshot);
             return snapshot;
         }
 
         // Синхронная перезагрузка: заменяем single-flight-задачу и ждём
-        var reload = NewLoadLazy(dataSourceId, schemaName, previous: snapshot);
+        var reload = NewLoadLazy(dataSourceId, database, schemaName, previous: snapshot);
         var current = entry.TrySwap(lazy, reload) ? reload : entry.Lazy;
         return await current.Value.WaitAsync(ct).ConfigureAwait(false);
     }
@@ -121,14 +133,14 @@ public sealed class MetadataCache : IMetadataCache, IMetadataPersistence
         return Task.FromResult<IReadOnlyList<SchemaSnapshot>>(result);
     }
 
-    public async Task WarmupAsync(Guid dataSourceId, IReadOnlyList<string> schemas, CancellationToken ct)
+    public async Task WarmupAsync(Guid dataSourceId, string? database, IReadOnlyList<string> schemas, CancellationToken ct)
     {
         // Прогреваем схемы параллельно; ошибка одной схемы не прерывает остальные
         var tasks = schemas.Select(async schema =>
         {
             try
             {
-                await GetSchemaAsync(dataSourceId, schema, ct).ConfigureAwait(false);
+                await GetSchemaAsync(dataSourceId, database, schema, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -163,30 +175,39 @@ public sealed class MetadataCache : IMetadataCache, IMetadataPersistence
         return Task.FromResult(result);
     }
 
-    public async Task InvalidateAsync(Guid dataSourceId, string? schemaName, CancellationToken ct)
+    public async Task InvalidateAsync(Guid dataSourceId, string? database, string? schemaName, CancellationToken ct)
     {
         if (_caches.TryGetValue(dataSourceId, out var ds))
         {
             if (schemaName is null)
             {
-                ds.Schemas.Clear();
-                ds.Indexes.Clear();
+                // Чистим только скоупы указанной базы (по префиксу ключа), не весь датасорс —
+                // у остальных баз того же датасорса свои независимые снапшоты.
+                foreach (var key in ds.Schemas.Keys.Where(k => ScopeMatchesDatabase(k, database)).ToList())
+                    ds.Schemas.TryRemove(key, out _);
+                foreach (var key in ds.Indexes.Keys.Where(k => ScopeMatchesDatabase(k, database)).ToList())
+                    ds.Indexes.TryRemove(key, out _);
             }
             else
             {
-                ds.Schemas.TryRemove(schemaName, out _);
-                ds.Indexes.TryRemove(schemaName, out _);
+                var scopeKey = ScopeKey(database, schemaName);
+                ds.Schemas.TryRemove(scopeKey, out _);
+                ds.Indexes.TryRemove(scopeKey, out _);
             }
         }
 
-        // Удаляем и persistent-снапшот: следующий запрос загрузит свежие метаданные из БД
-        try
+        // Persistent-снапшоты хранятся только для первичной базы (database == null) — см. LoadCoreAsync.
+        // Для непервичных баз в хранилище нечего удалять.
+        if (database is null)
         {
-            await _store.DeleteAsync(dataSourceId, schemaName, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Не удалось удалить persistent-снапшот {Schema} датасорса {DataSourceId}", schemaName, dataSourceId);
+            try
+            {
+                await _store.DeleteAsync(dataSourceId, schemaName, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Не удалось удалить persistent-снапшот {Schema} датасорса {DataSourceId}", schemaName, dataSourceId);
+            }
         }
     }
 
@@ -212,13 +233,15 @@ public sealed class MetadataCache : IMetadataCache, IMetadataPersistence
             ct.ThrowIfCancellationRequested();
             var ds = _caches.GetOrAdd(dataSourceId, _ => new DatasourceCache());
             var entry = new SchemaEntry(CompletedLazy(snapshot));
+            // Persistent-снапшоты — только для первичной базы (database == null), кладём в null-скоуп.
+            var scopeKey = ScopeKey(null, snapshot.SchemaName);
             // Не затираем уже загруженные в память снапшоты
-            if (!ds.Schemas.TryAdd(snapshot.SchemaName, entry))
+            if (!ds.Schemas.TryAdd(scopeKey, entry))
                 continue;
-            ds.Indexes[snapshot.SchemaName] = SchemaSearchIndex.Build(snapshot);
+            ds.Indexes[scopeKey] = SchemaSearchIndex.Build(snapshot);
 
             if (!IsFresh(snapshot))
-                TryStartBackgroundRefresh(dataSourceId, snapshot.SchemaName, entry, snapshot);
+                TryStartBackgroundRefresh(dataSourceId, null, snapshot.SchemaName, entry, snapshot);
         }
     }
 
@@ -237,47 +260,54 @@ public sealed class MetadataCache : IMetadataCache, IMetadataPersistence
     /// гарантирует ровно один вызов загрузчика на все параллельные запросы.
     /// Токен вызывающего не передаётся: загрузка общая, отмена одного запроса её не прерывает.
     /// </summary>
-    private Lazy<Task<SchemaSnapshot>> NewLoadLazy(Guid dataSourceId, string schemaName, SchemaSnapshot? previous)
-        => new(() => Task.Run(() => LoadCoreAsync(dataSourceId, schemaName, previous, CancellationToken.None)),
+    private Lazy<Task<SchemaSnapshot>> NewLoadLazy(Guid dataSourceId, string? database, string schemaName, SchemaSnapshot? previous)
+        => new(() => Task.Run(() => LoadCoreAsync(dataSourceId, database, schemaName, previous, CancellationToken.None)),
                LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
     /// Загрузка снапшота через IMetadataLoader + сохранение на диск + перестройка поискового индекса.
     /// Версионирование: если VersionHash не изменился, индекс не перестраивается.
+    /// Persistent-снапшот (ISnapshotStore) сохраняется только для первичной базы (database == null):
+    /// хранилище не знает о базе — ключуется только (датасорс, схема), а менять его схему ради
+    /// непервичных баз PostgreSQL не оправдано. Холодный кэш для них после рестарта — приемлемая цена.
     /// </summary>
-    private async Task<SchemaSnapshot> LoadCoreAsync(Guid dataSourceId, string schemaName, SchemaSnapshot? previous, CancellationToken ct)
+    private async Task<SchemaSnapshot> LoadCoreAsync(Guid dataSourceId, string? database, string schemaName, SchemaSnapshot? previous, CancellationToken ct)
     {
         var startedAt = _time.GetTimestamp();
-        var snapshot = await _loader.LoadAsync(dataSourceId, schemaName, ct).ConfigureAwait(false);
-        _logger.LogDebug("Интроспекция схемы {Schema} датасорса {DataSourceId}: {ElapsedMs} мс, таблиц {Tables}",
-            schemaName, dataSourceId,
+        var snapshot = await _loader.LoadAsync(dataSourceId, database, schemaName, ct).ConfigureAwait(false);
+        _logger.LogDebug("Интроспекция схемы {Schema} датасорса {DataSourceId} (база {Database}): {ElapsedMs} мс, таблиц {Tables}",
+            schemaName, dataSourceId, database,
             (int)_time.GetElapsedTime(startedAt).TotalMilliseconds, snapshot.Tables.Count);
 
         if (snapshot.LoadedAt == default)
             snapshot = snapshot with { LoadedAt = _time.GetUtcNow() };
 
         var ds = _caches.GetOrAdd(dataSourceId, _ => new DatasourceCache());
+        var scopeKey = ScopeKey(database, schemaName);
         var unchanged = previous?.VersionHash is not null
                         && snapshot.VersionHash is not null
                         && string.Equals(previous.VersionHash, snapshot.VersionHash, StringComparison.Ordinal)
-                        && ds.Indexes.ContainsKey(schemaName);
+                        && ds.Indexes.ContainsKey(scopeKey);
         if (!unchanged)
-            ds.Indexes[schemaName] = SchemaSearchIndex.Build(snapshot);
+            ds.Indexes[scopeKey] = SchemaSearchIndex.Build(snapshot);
 
-        try
+        if (database is null)
         {
-            await _store.SaveAsync(dataSourceId, snapshot, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Не удалось сохранить persistent-снапшот {Schema} датасорса {DataSourceId}", schemaName, dataSourceId);
+            try
+            {
+                await _store.SaveAsync(dataSourceId, snapshot, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Не удалось сохранить persistent-снапшот {Schema} датасорса {DataSourceId}", schemaName, dataSourceId);
+            }
         }
 
         return snapshot;
     }
 
     /// <summary>Запускает фоновое обновление устаревшего снапшота (не более одного одновременно).</summary>
-    private void TryStartBackgroundRefresh(Guid dataSourceId, string schemaName, SchemaEntry entry, SchemaSnapshot stale)
+    private void TryStartBackgroundRefresh(Guid dataSourceId, string? database, string schemaName, SchemaEntry entry, SchemaSnapshot stale)
     {
         if (Interlocked.CompareExchange(ref entry.RefreshInFlight, 1, 0) != 0)
             return; // обновление уже идёт
@@ -286,7 +316,7 @@ public sealed class MetadataCache : IMetadataCache, IMetadataPersistence
         {
             try
             {
-                var fresh = await LoadCoreAsync(dataSourceId, schemaName, stale, CancellationToken.None).ConfigureAwait(false);
+                var fresh = await LoadCoreAsync(dataSourceId, database, schemaName, stale, CancellationToken.None).ConfigureAwait(false);
                 entry.Replace(fresh);
             }
             catch (Exception ex)

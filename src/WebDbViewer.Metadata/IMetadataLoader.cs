@@ -9,6 +9,6 @@ namespace WebDbViewer.Metadata;
 /// </summary>
 public interface IMetadataLoader
 {
-    /// <summary>Загружает полный снапшот схемы указанного датасорса.</summary>
-    Task<SchemaSnapshot> LoadAsync(Guid dataSourceId, string schema, CancellationToken ct);
+    /// <summary>Загружает полный снапшот схемы указанного датасорса. <paramref name="database"/> — null означает базу из настроек подключения.</summary>
+    Task<SchemaSnapshot> LoadAsync(Guid dataSourceId, string? database, string schema, CancellationToken ct);
 }

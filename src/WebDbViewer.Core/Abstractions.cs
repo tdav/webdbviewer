@@ -150,20 +150,20 @@ public interface IDbSessionManager
 /// <summary>Кэш метаданных per-datasource: снапшоты схем, поиск, инвалидация.</summary>
 public interface IMetadataCache
 {
-    /// <summary>Снапшот схемы: из кэша или загрузка (single-flight).</summary>
-    Task<SchemaSnapshot> GetSchemaAsync(Guid dataSourceId, string schemaName, CancellationToken ct);
+    /// <summary>Снапшот схемы: из кэша или загрузка (single-flight). <paramref name="database"/> — null означает базу из настроек подключения.</summary>
+    Task<SchemaSnapshot> GetSchemaAsync(Guid dataSourceId, string? database, string schemaName, CancellationToken ct);
 
     /// <summary>Все закэшированные схемы датасорса.</summary>
     Task<IReadOnlyList<SchemaSnapshot>> GetLoadedSchemasAsync(Guid dataSourceId, CancellationToken ct);
 
-    /// <summary>Фоновый прогрев (eager) списка схем.</summary>
-    Task WarmupAsync(Guid dataSourceId, IReadOnlyList<string> schemas, CancellationToken ct);
+    /// <summary>Фоновый прогрев (eager) списка схем. <paramref name="database"/> — null означает базу из настроек подключения.</summary>
+    Task WarmupAsync(Guid dataSourceId, string? database, IReadOnlyList<string> schemas, CancellationToken ct);
 
     /// <summary>Префиксный/подстрочный поиск объектов (trie + camelCase матчинг).</summary>
     Task<IReadOnlyList<DbObjectNode>> SearchAsync(Guid dataSourceId, string query, int limit, CancellationToken ct);
 
-    /// <summary>Инвалидация схемы (DDL-событие, ручной refresh, TTL).</summary>
-    Task InvalidateAsync(Guid dataSourceId, string? schemaName, CancellationToken ct);
+    /// <summary>Инвалидация схемы (DDL-событие, ручной refresh, TTL). <paramref name="database"/> — null означает базу из настроек подключения.</summary>
+    Task InvalidateAsync(Guid dataSourceId, string? database, string? schemaName, CancellationToken ct);
 }
 
 /// <summary>Разбиение скрипта на statements с учётом dollar-quoting, PL/SQL-блоков, слэш-терминатора.</summary>
@@ -200,6 +200,8 @@ public sealed record CompletionRequest
     /// <summary>Позиция каретки — смещение в символах от начала текста.</summary>
     public required int CaretOffset { get; init; }
     public string? DefaultSchema { get; init; }
+    /// <summary>База сервера, отличная от базы из конфигурации; null — база датасорса.</summary>
+    public string? Database { get; init; }
     public int Limit { get; init; } = 200;
 }
 

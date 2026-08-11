@@ -14,9 +14,7 @@
             hx-swap="innerHTML">
         @foreach (var db in Model.Databases)
         {
-            @* data-primary — база из настроек подключения: только для неё есть кэш метаданных (автодополнение) *@
-            <option value="@db" selected="@(db == Model.SelectedDatabase)"
-                    data-primary="@(db == Model.ConnectionDatabase ? "true" : null)">@db</option>
+            <option value="@db" selected="@(db == Model.SelectedDatabase)">@db</option>
         }
     </select>
 }

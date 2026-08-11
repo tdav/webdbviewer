@@ -690,7 +690,7 @@ internal sealed class SemanticCompleter
     {
         try
         {
-            return await _metadata.GetSchemaAsync(request.DataSourceId, schema, ct);
+            return await _metadata.GetSchemaAsync(request.DataSourceId, request.Database, schema, ct);
         }
         catch
         {

@@ -60,24 +60,24 @@ internal sealed class FakeLoader : IMetadataLoader
     /// <summary>Ворота: если заданы, загрузка ждёт открытия.</summary>
     public TaskCompletionSource? Gate { get; set; }
 
-    /// <summary>Фабрика снапшота по (датасорс, схема).</summary>
-    public Func<Guid, string, SchemaSnapshot> Factory { get; set; } =
-        (_, schema) => TestHelpers.Snapshot(schema, null, TestHelpers.Table(schema, "t1"));
+    /// <summary>Фабрика снапшота по (датасорс, база, схема).</summary>
+    public Func<Guid, string?, string, SchemaSnapshot> Factory { get; set; } =
+        (_, _, schema) => TestHelpers.Snapshot(schema, null, TestHelpers.Table(schema, "t1"));
 
     /// <summary>Если задано — загрузка бросает это исключение.</summary>
     public Exception? Throw { get; set; }
 
-    public ConcurrentBag<(Guid DataSourceId, string Schema)> Calls { get; } = [];
+    public ConcurrentBag<(Guid DataSourceId, string? Database, string Schema)> Calls { get; } = [];
 
-    public async Task<SchemaSnapshot> LoadAsync(Guid dataSourceId, string schema, CancellationToken ct)
+    public async Task<SchemaSnapshot> LoadAsync(Guid dataSourceId, string? database, string schema, CancellationToken ct)
     {
         Interlocked.Increment(ref _loadCount);
-        Calls.Add((dataSourceId, schema));
+        Calls.Add((dataSourceId, database, schema));
         if (Gate is not null)
             await Gate.Task.WaitAsync(ct);
         if (Throw is not null)
             throw Throw;
-        return Factory(dataSourceId, schema);
+        return Factory(dataSourceId, database, schema);
     }
 }
 

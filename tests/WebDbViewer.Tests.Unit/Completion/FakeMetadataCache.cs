@@ -59,7 +59,7 @@ public sealed class FakeMetadataCache : IMetadataCache
         LoadedAt = DateTimeOffset.UtcNow,
     };
 
-    public Task<SchemaSnapshot> GetSchemaAsync(Guid dataSourceId, string schemaName, CancellationToken ct)
+    public Task<SchemaSnapshot> GetSchemaAsync(Guid dataSourceId, string? database, string schemaName, CancellationToken ct)
     {
         if (dataSourceId != DsId || !string.Equals(schemaName, "public", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Схема не найдена: {schemaName}");
@@ -69,7 +69,7 @@ public sealed class FakeMetadataCache : IMetadataCache
     public Task<IReadOnlyList<SchemaSnapshot>> GetLoadedSchemasAsync(Guid dataSourceId, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<SchemaSnapshot>>([PublicSchema]);
 
-    public Task WarmupAsync(Guid dataSourceId, IReadOnlyList<string> schemas, CancellationToken ct) =>
+    public Task WarmupAsync(Guid dataSourceId, string? database, IReadOnlyList<string> schemas, CancellationToken ct) =>
         Task.CompletedTask;
 
     public Task<IReadOnlyList<DbObjectNode>> SearchAsync(Guid dataSourceId, string query, int limit, CancellationToken ct)
@@ -83,6 +83,6 @@ public sealed class FakeMetadataCache : IMetadataCache
         return Task.FromResult<IReadOnlyList<DbObjectNode>>(nodes);
     }
 
-    public Task InvalidateAsync(Guid dataSourceId, string? schemaName, CancellationToken ct) =>
+    public Task InvalidateAsync(Guid dataSourceId, string? database, string? schemaName, CancellationToken ct) =>
         Task.CompletedTask;
 }

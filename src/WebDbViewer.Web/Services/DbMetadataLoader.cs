@@ -20,7 +20,7 @@ public sealed class DbMetadataLoader : IMetadataLoader
         _protector = protector;
     }
 
-    public async Task<SchemaSnapshot> LoadAsync(Guid dataSourceId, string schema, CancellationToken ct)
+    public async Task<SchemaSnapshot> LoadAsync(Guid dataSourceId, string? database, string schema, CancellationToken ct)
     {
         var config = await _store.GetAsync(dataSourceId, ct)
                      ?? throw new InvalidOperationException($"Датасорс {dataSourceId} не найден.");
@@ -28,7 +28,8 @@ public sealed class DbMetadataLoader : IMetadataLoader
         var provider = _providers.Get(config.Kind);
         var password = config.ProtectedPassword is { Length: > 0 } p ? _protector.Unprotect(p) : "";
 
-        await using var connection = await provider.OpenConnectionAsync(config, password, ct);
+        var effective = string.IsNullOrWhiteSpace(database) ? config : config with { Database = database };
+        await using var connection = await provider.OpenConnectionAsync(effective, password, ct);
         return await provider.LoadSchemaSnapshotAsync(connection, schema, ct);
     }
 }

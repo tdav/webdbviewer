@@ -33,8 +33,8 @@ public class InvalidationTests
         var loader = new FakeLoader();
         var cache = CreateCache(loader, new InMemorySnapshotStore());
 
-        await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
-        await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
 
         Assert.Equal(1, loader.LoadCount);
     }
@@ -46,20 +46,20 @@ public class InvalidationTests
         var time = new ManualTime();
         var loader = new FakeLoader
         {
-            Factory = (_, schema) => TestHelpers.Snapshot(schema, null, TestHelpers.Table(schema, "t1"))
+            Factory = (_, _, schema) => TestHelpers.Snapshot(schema, null, TestHelpers.Table(schema, "t1"))
                 with { LoadedAt = time.Now }
         };
         var cache = CreateCache(loader, new InMemorySnapshotStore(), ttl: TimeSpan.FromMinutes(5), time);
 
-        await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
         Assert.Equal(1, loader.LoadCount);
 
         time.Now += TimeSpan.FromMinutes(10); // TTL истёк
-        await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
         Assert.Equal(2, loader.LoadCount);
 
         // Свежезагруженный снапшот снова отдаётся из кэша
-        await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
         Assert.Equal(2, loader.LoadCount);
     }
 
@@ -71,13 +71,13 @@ public class InvalidationTests
         var store = new InMemorySnapshotStore();
         var cache = CreateCache(loader, store);
 
-        await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
         Assert.True(store.Contains(ds, "public"));
 
-        await cache.InvalidateAsync(ds, "public", CancellationToken.None);
+        await cache.InvalidateAsync(ds, null, "public", CancellationToken.None);
         Assert.False(store.Contains(ds, "public")); // persistent-снапшот удалён
 
-        await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
         Assert.Equal(2, loader.LoadCount); // перезагрузка после инвалидации
     }
 
@@ -88,11 +88,11 @@ public class InvalidationTests
         var loader = new FakeLoader();
         var cache = CreateCache(loader, new InMemorySnapshotStore());
 
-        await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
-        await cache.GetSchemaAsync(ds, "audit", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "audit", CancellationToken.None);
         Assert.Equal(2, (await cache.GetLoadedSchemasAsync(ds, CancellationToken.None)).Count);
 
-        await cache.InvalidateAsync(ds, null, CancellationToken.None);
+        await cache.InvalidateAsync(ds, null, null, CancellationToken.None);
         Assert.Empty(await cache.GetLoadedSchemasAsync(ds, CancellationToken.None));
 
         // Поиск по инвалидированному датасорсу пуст
@@ -107,19 +107,19 @@ public class InvalidationTests
         var version = "v1";
         var tableName = "old_table";
         var loader = new FakeLoader();
-        loader.Factory = (_, schema) =>
+        loader.Factory = (_, _, schema) =>
             TestHelpers.Snapshot(schema, version, TestHelpers.Table(schema, tableName))
                 with { LoadedAt = time.Now };
         var cache = CreateCache(loader, new InMemorySnapshotStore(), ttl: TimeSpan.FromMinutes(5), time);
 
-        await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
+        await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
         Assert.Contains(await cache.SearchAsync(ds, "old", 10, CancellationToken.None), n => n.Name == "old_table");
 
         // DDL изменился: новый hash и новая таблица
         version = "v2";
         tableName = "new_table";
         time.Now += TimeSpan.FromMinutes(10);
-        var reloaded = await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
+        var reloaded = await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
 
         Assert.Equal("v2", reloaded.VersionHash);
         Assert.Contains(await cache.SearchAsync(ds, "new", 10, CancellationToken.None), n => n.Name == "new_table");
@@ -141,7 +141,7 @@ public class InvalidationTests
         await cache.LoadFromDiskAsync(CancellationToken.None);
 
         // Снапшот доступен из памяти без обращения к загрузчику (свежий по TTL)
-        var snapshot = await cache.GetSchemaAsync(ds, "public", CancellationToken.None);
+        var snapshot = await cache.GetSchemaAsync(ds, null, "public", CancellationToken.None);
         Assert.Equal("public", snapshot.SchemaName);
         Assert.Equal(0, loader.LoadCount);
 
@@ -161,7 +161,7 @@ public class InvalidationTests
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var loader = new FakeLoader
         {
-            Factory = (_, schema) =>
+            Factory = (_, _, schema) =>
             {
                 gate.TrySetResult();
                 return TestHelpers.Snapshot(schema, "v2", TestHelpers.Table(schema, "fresh_table"));

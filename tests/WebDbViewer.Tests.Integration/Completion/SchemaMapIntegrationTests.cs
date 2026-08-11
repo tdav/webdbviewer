@@ -58,7 +58,7 @@ public sealed class SchemaMapIntegrationTests : IAsyncLifetime
     /// <summary>Минимальный IMetadataLoader поверх уже открытого соединения теста — без стора датасорсов и секретов Web-слоя.</summary>
     private sealed class DirectLoader(PostgresProvider provider, DbConnection connection) : IMetadataLoader
     {
-        public Task<SchemaSnapshot> LoadAsync(Guid dataSourceId, string schema, CancellationToken ct)
+        public Task<SchemaSnapshot> LoadAsync(Guid dataSourceId, string? database, string schema, CancellationToken ct)
             => provider.LoadSchemaSnapshotAsync(connection, schema, ct);
     }
 
@@ -94,7 +94,7 @@ public sealed class SchemaMapIntegrationTests : IAsyncLifetime
         try
         {
             // 1) Первая загрузка: таблица видна, id — первичный ключ, снапшот не урезан.
-            var snapshot1 = await cache.GetSchemaAsync(dataSourceId, SchemaName, ct);
+            var snapshot1 = await cache.GetSchemaAsync(dataSourceId, null, SchemaName, ct);
             var dto1 = SchemaMapDto.From(snapshot1);
 
             Assert.False(dto1.Partial);
@@ -115,14 +115,14 @@ public sealed class SchemaMapIntegrationTests : IAsyncLifetime
             }
 
             // 3) Повторный запрос в пределах TTL — отдаётся закэшированный снапшот без колонки extra.
-            var snapshot2 = await cache.GetSchemaAsync(dataSourceId, SchemaName, ct);
+            var snapshot2 = await cache.GetSchemaAsync(dataSourceId, null, SchemaName, ct);
             var table2 = Assert.Single(snapshot2.Tables, t => t.Name == ProbeTable);
             Assert.DoesNotContain(table2.Columns, c => c.Name == "extra");
 
             // 4) Инвалидация — следующая загрузка идёт заново и видит новую колонку.
-            await cache.InvalidateAsync(dataSourceId, SchemaName, ct);
+            await cache.InvalidateAsync(dataSourceId, null, SchemaName, ct);
 
-            var snapshot3 = await cache.GetSchemaAsync(dataSourceId, SchemaName, ct);
+            var snapshot3 = await cache.GetSchemaAsync(dataSourceId, null, SchemaName, ct);
             var dto3 = SchemaMapDto.From(snapshot3);
             var table3 = Assert.Single(dto3.Tables, t => t.Name == ProbeTable);
             Assert.Contains(table3.Columns, c => c.Name == "extra");

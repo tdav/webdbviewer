@@ -61,7 +61,7 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
         var prefix = sql[..caret];
         var limit = request.Limit > 0 ? request.Limit : 200;
 
-        var cacheKey = ComputeCacheKey(sql, caret, dialect, request.DataSourceId, request.DefaultSchema, opts);
+        var cacheKey = ComputeCacheKey(sql, caret, dialect, request.DataSourceId, request.Database, request.DefaultSchema, opts);
         lock (_cacheLock)
         {
             if (_lastResult is { } last && last.Key == cacheKey)
@@ -202,7 +202,7 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
             return null;
         try
         {
-            return await _metadata.GetSchemaAsync(request.DataSourceId, schema, ct);
+            return await _metadata.GetSchemaAsync(request.DataSourceId, request.Database, schema, ct);
         }
         catch
         {
@@ -438,10 +438,10 @@ public sealed partial class CompletionEngine : ICompletionEngine, ISemanticCompl
     }
 
     private static long ComputeCacheKey(
-        string sql, int caret, DbKind dialect, Guid dsId, string? schema, CompletionOptions opts)
+        string sql, int caret, DbKind dialect, Guid dsId, string? database, string? schema, CompletionOptions opts)
     {
         var h1 = (long)string.GetHashCode(sql, StringComparison.Ordinal);
-        var h2 = (long)HashCode.Combine(caret, dialect, dsId, schema, opts.AutoAliasTables);
+        var h2 = (long)HashCode.Combine(caret, dialect, dsId, database, schema, opts.AutoAliasTables);
         return (h1 << 32) ^ (uint)h2;
     }
 }
