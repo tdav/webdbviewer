@@ -108,6 +108,13 @@ function tableRefs(statement) {
 
 const TABLE_CONTEXT = new Set(['from', 'join', 'into', 'update', 'table', 'lateral']);
 
+// Позиция значения/колонки: после этих слов уместны колонки и функции,
+// но не словарь диалекта. BY покрывает GROUP BY и ORDER BY.
+const COLUMN_CONTEXT = new Set([
+  'select', 'distinct', 'set', 'where', 'on', 'having', 'by',
+  'and', 'or', 'when', 'then', 'else', 'not', 'in',
+]);
+
 // --- Построение вариантов ---
 
 export function localCompletions({ text, pos, dsId, db, schema, dialect }) {
@@ -133,7 +140,12 @@ export function localCompletions({ text, pos, dsId, db, schema, dialect }) {
   const tableByName = new Map();
   for (const t of snapshot.tables) tableByName.set(t.n.toLowerCase(), t);
 
+  // Категория контекста уходит в editor.js: по ней он решает, добавлять ли
+  // ключевые слова диалекта. Точная грамматика — забота серверного c3;
+  // здесь достаточно грубой классификации по предыдущему слову.
+  let context = 'general';
   if (qualifier) {
+    context = 'qualifier';
     // «alias.» или «table.» — колонки соответствующей таблицы и ничего больше.
     const q = qualifier[1].replace(/^"|"$/g, '').toLowerCase();
     const ref = refs.find((r) => (r.alias || '').toLowerCase() === q)
@@ -141,6 +153,7 @@ export function localCompletions({ text, pos, dsId, db, schema, dialect }) {
     const table = tableByName.get((ref ? ref.name : q).toLowerCase());
     if (table) pushColumns(options, table, PRIORITY.scopeColumn, dialect);
   } else if (prevWord && TABLE_CONTEXT.has(prevWord.toLowerCase())) {
+    context = 'table';
     // Позиция имени таблицы: только таблицы и вью.
     // ponytail: автоалиас (SemanticCompleter.MakeAlias) здесь раньше добавлялся
     // безусловно, а сервер — только при включённом CompletionOptions.AutoAliasTables
@@ -148,6 +161,14 @@ export function localCompletions({ text, pos, dsId, db, schema, dialect }) {
     // баг: один и тот же вариант вставлял разный текст до/после ответа сервера.
     // Пока сервер не включит опцию, клиент алиас не добавляет.
     pushTables(options, snapshot.tables, dialect);
+  } else if (prevWord && COLUMN_CONTEXT.has(prevWord.toLowerCase())) {
+    context = 'column';
+    // Позиция колонки/значения: колонки таблиц statement'а и функции схемы.
+    for (const ref of refs) {
+      const table = tableByName.get(ref.name.toLowerCase());
+      if (table) pushColumns(options, table, PRIORITY.scopeColumn, dialect);
+    }
+    pushRoutines(options, snapshot.routines, dialect);
   } else {
     // Общий случай: колонки таблиц текущего statement, затем таблицы и функции.
     for (const ref of refs) {
@@ -160,7 +181,9 @@ export function localCompletions({ text, pos, dsId, db, schema, dialect }) {
 
   timings.push(performance.now() - started);
   if (timings.length > 500) timings.shift();
-  return options.length ? { from, options } : null;
+  // Пустой options при распознанном контексте — валидный результат: editor.js
+  // по context решает, добавлять ли ключевые слова, даже когда объектов нет.
+  return { from, options, context };
 }
 
 function pushColumns(options, table, priority, dialect) {

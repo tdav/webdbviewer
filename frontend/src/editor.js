@@ -173,6 +173,10 @@ function makeCompletionSource(textarea) {
     return extra.length ? { ...server, options: server.options.concat(extra) } : server;
   }
 
+  // Boost ключевых слов: ниже функций (−13) и на уровне серверных builtin (~−19),
+  // чтобы объекты схемы всегда стояли выше словаря диалекта.
+  const KEYWORD_BOOST = -19;
+
   function localResult(context) {
     const local = window.WebDbCompletion.localCompletions({
       text: context.state.doc.toString(),
@@ -183,14 +187,22 @@ function makeCompletionSource(textarea) {
       dialect: textarea.dataset.dialect,
     });
     // Ключевые слова — встроенным keywordCompletionSource (тот же диалект и регистр,
-    // что и подсветка), свой список не заводим. override отключает штатные language-data
-    // источники, поэтому вызываем источник сами и подмешиваем результат в локальный —
-    // merge() ниже дедуплицирует по label и уберёт повтор, когда придёт серверный ответ
-    // (сервер тоже возвращает ключевые слова, kind: "keyword", тем же регистром).
+    // что и подсветка), свой список не заводим. Но только там, где словарь уместен:
+    // после FROM/SELECT/WHERE и «x.» он лишь хоронит таблицы и колонки под собой
+    // (категории table/column/qualifier). Точную грамматику даст сервер (c3) через
+    // debounce; merge() дедуплицирует по label, когда его ответ придёт.
+    if (local && local.context !== 'general') {
+      return local.options.length ? local : null;
+    }
     const keywords = keywordSourceFor(textarea.dataset.dialect)(context);
-    if (!keywords) return local;
-    if (!local) return keywords;
-    return { ...local, options: local.options.concat(keywords.options) };
+    const ranked = keywords
+      ? { ...keywords, options: keywords.options.map((o) => ({ ...o, boost: KEYWORD_BOOST })) }
+      : null;
+    if (!ranked) return local && local.options.length ? local : null;
+    if (!local) return ranked;
+    // from берём из local: оба правила слова совпадают, а local считает его от каретки.
+    const merged = local.options.concat(ranked.options);
+    return { ...local, options: merged };
   }
 
   /// Запрашивает сервер в фоне и, когда ответ пришёл, перезапускает список:
