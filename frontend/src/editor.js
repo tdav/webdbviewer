@@ -55,6 +55,9 @@ const editorThemeSpec = {
     backgroundColor: 'var(--accent-soft)',
     color: 'var(--text)',
   },
+  // Штатный максимум списка — 10em (~13 строк): при полном снапшоте схемы тесно.
+  // vh вместо em — чтобы на невысоких окнах список не выходил за экран.
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': { maxHeight: 'min(32em, 60vh)' },
   '.cm-selectionMatch': { backgroundColor: 'var(--accent-soft)' },
   // Подсказка параметров функции: та же плашка, что у автодополнения (.cm-tooltip выше).
   '.cm-signature-help': { padding: '4px 8px', maxWidth: '48ch' },
@@ -227,8 +230,11 @@ function makeCompletionSource(textarea) {
     if (!context.explicit && (!chain || chain.from === chain.to)) return null;
     if (!textarea.dataset.dsId) return null;
     // Кэш метаданных строится только для базы из настроек подключения: в чужой базе
-    // подсказки объектов были бы из другой БД — не предлагаем их вовсе.
-    if (!isPrimaryDatabaseSelected()) return null;
+    // подсказки объектов были бы из другой БД, а сервер ответил бы объектами первичной
+    // базы — поэтому запрос не шлём. Ключевые слова диалекта от базы не зависят,
+    // их предлагаем всегда, иначе в чужой базе автодополнение мертво целиком.
+    if (!isPrimaryDatabaseSelected())
+      return keywordSourceFor(textarea.dataset.dialect)(context);
 
     const key = answerKey(context);
     const local = localResult(context);
