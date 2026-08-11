@@ -65,6 +65,14 @@
         Model.Database is { Length: > 0 } exportDb ? "&db=" + Uri.EscapeDataString(exportDb) : "");
     var exportTabUrl = exportQuery is null ? null : "/editor?handler=ExportTab&" + exportQuery;
     var exportFileUrl = exportQuery is null ? null : "/api/export/sql?" + exportQuery.Replace("&name=", "&table=");
+
+    // Роль узла для синхронизации с тулбаром (app.js): клик по датасорсу, базе или
+    // схеме выставляет селекты редактора. Прочие узлы роли не имеют — клик по таблице
+    // не должен дёргать интроспекцию.
+    var treeRole = Model.Path == "" ? "datasource"
+        : node.Type == DbObjectType.Schema ? "schema"
+        : node.Type == DbObjectType.Database ? "database"
+        : null;
 }
 @* Кнопка DDL одинакова в обеих ветках разметки — вынесена в локальную функцию. *@
 @{
@@ -132,7 +140,7 @@
         </span>
     }
 }
-<li class="tree-node @(node.IsSystem ? "system" : null)" data-type="@node.Type" data-name="@node.Name" data-schema="@node.Schema" data-database="@Model.Database">
+<li class="tree-node @(node.IsSystem ? "system" : null)" data-type="@node.Type" data-name="@node.Name" data-schema="@node.Schema" data-database="@Model.Database" data-ds-id="@Model.DsId" data-tree-role="@treeRole">
     @if (expandable)
     {
         @* Раскрытием управляет делегированный обработчик в app.js: он же держит
