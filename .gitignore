@@ -13,3 +13,4 @@ src/WebDbViewer.Web/metadata.db
 src/WebDbViewer.Web/App_Data/
 # Файловые логи Serilog
 src/WebDbViewer.Web/logs/
+/logs
