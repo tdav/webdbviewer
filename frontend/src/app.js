@@ -372,25 +372,18 @@ function unblockScreen() {
 
 window.WebDb = { toast, toggleTheme, currentTheme, blockScreen, unblockScreen };
 
-// Обновление метаданных схемы: сбрасываем серверный кэш и клиентский снапшот,
-// затем грузим его заново. Делегирование на document — кнопка живёт в HTMX-фрагменте
-// тулбара и пересоздаётся при каждой смене датасорса или базы.
-document.addEventListener('click', async (e) => {
-  const btn = e.target.closest ? e.target.closest('[data-action="refresh-metadata"]') : null;
-  // aria-disabled не блокирует клик сам по себе — повторный клик во время
-  // запроса отсекаем здесь же (см. такой же приём в editor.js).
-  if (!btn || btn.getAttribute('aria-disabled') === 'true') return;
-  e.preventDefault();
+// --- Обновление метаданных схемы ---
+// Одна реализация на двух потребителей: кнопку «Перечитать…» в тулбаре и
+// синхронизацию из дерева (ниже). Вторая копия правила запрещена — копии расходятся.
+let refreshInFlight = false;
 
-  const ds = document.querySelector('[data-role="datasource-select"]');
-  const schemaSelect = document.querySelector('[data-role="schema-select"]');
-  const dbSelect = document.querySelector('[data-role="database-select"]');
-  const dsId = ds && ds.value;
-  const schema = schemaSelect && schemaSelect.value ? schemaSelect.value : null;
-  const db = dbSelect && dbSelect.value ? dbSelect.value : null;
-  if (!dsId) return;
-
-  btn.setAttribute('aria-disabled', 'true');
+async function refreshMetadata(dsId, db, schema) {
+  // Повторный вызов во время запроса игнорируется: кнопка могла быть перерисована
+  // HTMX-свопом, поэтому блокировка живёт здесь, а aria-disabled — лишь её отражение.
+  if (!dsId || refreshInFlight) return;
+  refreshInFlight = true;
+  const btn = document.querySelector('[data-action="refresh-metadata"]');
+  if (btn) btn.setAttribute('aria-disabled', 'true');
   try {
     const res = await fetch('/api/metadata/refresh', {
       method: 'POST',
@@ -417,6 +410,92 @@ document.addEventListener('click', async (e) => {
       window.WebDb.toast('Не удалось обновить метаданные', 'error');
     }
   } finally {
-    btn.removeAttribute('aria-disabled');
+    refreshInFlight = false;
+    const b = document.querySelector('[data-action="refresh-metadata"]');
+    if (b) b.removeAttribute('aria-disabled');
   }
+}
+
+// Кнопка в тулбаре: берёт текущие значения селектов. Делегирование на document —
+// кнопка живёт в HTMX-фрагменте и пересоздаётся при каждой смене датасорса или базы.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest ? e.target.closest('[data-action="refresh-metadata"]') : null;
+  if (!btn || btn.getAttribute('aria-disabled') === 'true') return;
+  e.preventDefault();
+  const ds = document.querySelector('[data-role="datasource-select"]');
+  const schemaSelect = document.querySelector('[data-role="schema-select"]');
+  const dbSelect = document.querySelector('[data-role="database-select"]');
+  refreshMetadata(
+    ds && ds.value,
+    dbSelect && dbSelect.value ? dbSelect.value : null,
+    schemaSelect && schemaSelect.value ? schemaSelect.value : null);
+});
+
+// --- Синхронизация дерева с тулбаром ---
+// Клик по датасорсу/базе/схеме в навигаторе выставляет селекты редактора и
+// обновляет метаданные (решение владельца: refresh при каждом клике).
+// Свопы тулбара асинхронные и каскадные (смена датасорса перерисовывает
+// #editor-scope, смена базы — ещё раз), поэтому цель применяется пошагово:
+// один шаг — одно изменение селекта, продолжение — по htmx:afterSwap.
+let treeSync = null; // { dsId, db, schema } — цель незавершённой синхронизации
+
+function applyTreeSync() {
+  if (!treeSync) return;
+  const goal = treeSync;
+  const ds = document.querySelector('[data-role="datasource-select"]');
+  if (!ds) { treeSync = null; return; }
+
+  if (ds.value !== goal.dsId) {
+    // Датасорса нет в селекте — синхронизировать не с чем, очередь снимается молча.
+    if (![...ds.options].some((o) => o.value === goal.dsId)) { treeSync = null; return; }
+    ds.value = goal.dsId;
+    ds.dispatchEvent(new Event('change', { bubbles: true }));
+    return; // продолжение — по htmx:afterSwap на #editor-scope
+  }
+
+  const dbSel = document.querySelector('[data-role="database-select"]');
+  if (goal.db && dbSel && dbSel.value !== goal.db) {
+    if (![...dbSel.options].some((o) => o.value === goal.db)) { treeSync = null; return; }
+    dbSel.value = goal.db;
+    dbSel.dispatchEvent(new Event('change', { bubbles: true }));
+    return; // смена базы перерисует тулбар ещё раз
+  }
+  if (goal.db && !dbSel) { treeSync = null; return; } // селекта баз нет — цель недостижима
+
+  if (goal.schema) {
+    const scSel = document.querySelector('[data-role="schema-select"]');
+    if (!scSel || ![...scSel.options].some((o) => o.value === goal.schema)) { treeSync = null; return; }
+    if (scSel.value !== goal.schema) {
+      scSel.value = goal.schema;
+      scSel.dispatchEvent(new Event('change', { bubbles: true })); // тулбар не перерисовывает
+    }
+  }
+
+  treeSync = null;
+  refreshMetadata(goal.dsId, goal.db, goal.schema);
+}
+
+document.addEventListener('htmx:afterSwap', (e) => {
+  if (e.target && e.target.id === 'editor-scope') applyTreeSync();
+});
+
+// Клик по узлу дерева. Без preventDefault/stopPropagation: раскрытие узла (hx-get)
+// и прочие обработчики работают как раньше, синхронизация только наблюдает.
+// Кнопки действий узла (DDL, данные) сами зовут stopPropagation — сюда не доходят.
+document.addEventListener('click', (e) => {
+  const label = e.target.closest ? e.target.closest('#nav-tree-root .tree-label') : null;
+  if (!label) return;
+  const li = label.closest('li[data-tree-role]');
+  if (!li || !li.dataset.dsId) return;
+
+  const role = li.dataset.treeRole;
+  const target = { dsId: li.dataset.dsId, db: null, schema: null };
+  if (role === 'database') target.db = li.dataset.name;
+  if (role === 'schema') {
+    target.db = li.dataset.database || null;
+    target.schema = li.dataset.name;
+  }
+  // Новый клик замещает незавершённую очередь предыдущего.
+  treeSync = target;
+  applyTreeSync();
 });
